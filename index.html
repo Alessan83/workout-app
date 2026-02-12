@@ -8,10 +8,9 @@
 body{font-family:Arial;background:#111;color:#eee;padding:15px;text-align:center}
 button{padding:8px;margin:6px;background:#222;color:#eee;border:1px solid #444}
 select{background:#222;color:#eee;border:1px solid #444;padding:5px}
-#metro{width:80px;height:80px;margin:20px auto;background:#333}
-.phase{margin:10px;font-weight:bold}
-.small{font-size:12px;color:#aaa}
-.block{margin:10px 0;padding:8px;border:1px solid #333}
+.section{margin:15px 0}
+.exercise{border:1px solid #333;padding:8px;margin:6px 0}
+a{color:#4da6ff;text-decoration:none}
 </style>
 </head>
 <body>
@@ -31,18 +30,24 @@ Allenamento: <span id="workoutType"></span>
 
 <div id="status"></div>
 
-<div id="session"></div>
+<div id="program"></div>
 
-<div id="metro"></div>
-<div class="phase" id="phaseText"></div>
+<div class="section">
+<div id="phase"></div>
 <div id="timeLeft"></div>
+<button onclick="startPhase()">Start Fase</button>
+<button onclick="nextPhase()">Fase Successiva</button>
+</div>
 
-<button onclick="startSession()">Start Sessione</button>
 <button onclick="completeWorkout()">Allenamento completato</button>
 
 <script>
 
-let data = JSON.parse(localStorage.getItem("workoutV3")) || {
+// ==========================
+// DATABASE BASE
+// ==========================
+
+let data = JSON.parse(localStorage.getItem("workoutV4")) || {
 startDate:new Date().toISOString().split("T")[0],
 lastDate:null,
 lastWorkout:0,
@@ -61,10 +66,18 @@ const workouts={
 };
 
 const exerciseDB={
+warm:["Jumping Jacks","High Knees","Arm Circles"],
+mobility:["Hip CARs","Thoracic Rotation","Ankle Rock"],
+core:["Plank","Dead Bug","Side Plank"],
+stretch:["Child Pose","Hamstring Stretch","Hip Flexor Stretch"],
 pull:["Band Row","Face Pull","High Row"],
 push:["Push-up","Floor Press","Pike Push-up"],
 posterior:["Deadlift","Glute Bridge","Good Morning"]
 };
+
+// ==========================
+// ROTAZIONE GIORNALIERA
+// ==========================
 
 function today(){
 return new Date().toISOString().split("T")[0];
@@ -74,109 +87,162 @@ function generateWorkout(){
 if(data.lastDate!==today()){
 data.lastWorkout = data.lastWorkout%3 +1;
 data.lastDate=today();
-localStorage.setItem("workoutV3",JSON.stringify(data));
+localStorage.setItem("workoutV4",JSON.stringify(data));
 }
 document.getElementById("workoutType").innerText=data.lastWorkout;
-renderSession();
+renderProgram();
 renderStatus();
 }
 
-function renderStatus(){
-let completedToday = data.completedDate===today();
-document.getElementById("status").innerHTML=
-(completedToday?"✔ Oggi completato":"")+
-"<br>🔥 Giorni consecutivi: "+data.streak;
-}
+// ==========================
+// PROGRAMMA SESSIONE
+// ==========================
 
-function renderSession(){
-let container=document.getElementById("session");
-container.innerHTML="";
-workouts[data.lastWorkout].forEach(cat=>{
-let ex=exerciseDB[cat][Math.floor(Math.random()*exerciseDB[cat].length)];
-container.innerHTML+=`
-<div class="block">
-<b>${ex}</b><br>
-Banda: ${data.categories[cat].band} kg<br>
-Tempo lavoro: ${data.categories[cat].time} sec
-</div>`;
-});
-}
-
-let timer;
-let currentPhaseIndex=0;
 let phases=[];
-let metroCounter=0;
+let currentPhaseIndex=0;
+let timer;
+let audioCtx;
+let gainNode;
 
 function buildPhases(){
 let mode=document.getElementById("mode").value;
-let total = mode==="25"?1500:2100;
-let warm = mode==="25"?90:120;
-let mobility = mode==="25"?90:120;
-let core = mode==="25"?90:120;
-let stretch = mode==="25"?60:90;
+let warmTime=mode==="25"?120:180;
+let mobilityTime=mode==="25"?120:180;
+let blockTime=mode==="25"?300:420;
+let coreTime=mode==="25"?120:180;
+let stretchTime=mode==="25"?120:180;
 
-let blockTime = (total - warm - mobility - core - stretch)/3;
+phases=[];
 
-phases=[
-{name:"Riscaldamento",time:warm},
-{name:"Mobilità",time:mobility}
-];
+phases.push({name:"Riscaldamento",time:warmTime,metronome:true});
+phases.push({name:"Mobilità",time:mobilityTime,metronome:false});
 
 workouts[data.lastWorkout].forEach(cat=>{
-phases.push({name:"Blocco "+cat,time:blockTime});
+phases.push({name:"Blocco "+cat,time:blockTime,metronome:true,category:cat});
 });
 
-phases.push({name:"Core controllo",time:core});
-phases.push({name:"Stretch",time:stretch});
+phases.push({name:"Core",time:coreTime,metronome:true});
+phases.push({name:"Stretch",time:30,metronome:true});
 }
 
-function startSession(){
+// ==========================
+// RENDER PROGRAMMA
+// ==========================
+
+function renderProgram(){
+let container=document.getElementById("program");
+container.innerHTML="";
+
+let warm = exerciseDB.warm.slice(0,2);
+let mobility = exerciseDB.mobility.slice(0,2);
+let core = exerciseDB.core.slice(0,1);
+let stretch = exerciseDB.stretch.slice(0,1);
+
+container.innerHTML+="<div class='section'><b>Riscaldamento</b></div>";
+warm.forEach(ex=>{
+container.innerHTML+=exerciseHTML(ex);
+});
+
+container.innerHTML+="<div class='section'><b>Mobilità</b></div>";
+mobility.forEach(ex=>{
+container.innerHTML+=exerciseHTML(ex);
+});
+
+workouts[data.lastWorkout].forEach(cat=>{
+container.innerHTML+="<div class='section'><b>"+cat.toUpperCase()+"</b></div>";
+let exList = exerciseDB[cat].slice(0,2);
+exList.forEach(ex=>{
+container.innerHTML+=exerciseHTML(ex,data.categories[cat]);
+});
+});
+
+container.innerHTML+="<div class='section'><b>Core</b></div>";
+core.forEach(ex=>{
+container.innerHTML+=exerciseHTML(ex);
+});
+
+container.innerHTML+="<div class='section'><b>Stretch</b></div>";
+stretch.forEach(ex=>{
+container.innerHTML+=exerciseHTML(ex);
+});
+}
+
+function exerciseHTML(name,catData){
+let link="https://www.youtube.com/results?search_query="+encodeURIComponent(name+" exercise tutorial");
+let extra="";
+if(catData){
+extra="Banda: "+catData.band+"kg | Tempo lavoro: "+catData.time+" sec";
+}
+return `
+<div class="exercise">
+<b>${name}</b><br>
+${extra}<br>
+<a href="${link}" target="_blank">Apri tutorial</a>
+</div>`;
+}
+
+// ==========================
+// TIMER + METRONOMO
+// ==========================
+
+function initAudio(){
+audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+gainNode=audioCtx.createGain();
+gainNode.gain.value=0.02;
+gainNode.connect(audioCtx.destination);
+}
+
+function beep(){
+let osc=audioCtx.createOscillator();
+osc.type="sine";
+osc.frequency.value=800;
+osc.connect(gainNode);
+osc.start();
+osc.stop(audioCtx.currentTime+0.05);
+}
+
+function startPhase(){
+if(!audioCtx) initAudio();
 buildPhases();
-currentPhaseIndex=0;
 runPhase();
 }
 
 function runPhase(){
 if(currentPhaseIndex>=phases.length){
 clearInterval(timer);
-document.getElementById("phaseText").innerText="Sessione finita";
+document.getElementById("phase").innerText="Sessione completata";
 return;
 }
 let phase=phases[currentPhaseIndex];
 let timeLeft=phase.time;
-document.getElementById("phaseText").innerText=phase.name;
+document.getElementById("phase").innerText=phase.name;
+
 timer=setInterval(()=>{
 timeLeft--;
 document.getElementById("timeLeft").innerText=timeLeft+" sec";
-updateMetronome();
+
+if(phase.metronome) beep();
+
 if(timeLeft<=0){
 clearInterval(timer);
 currentPhaseIndex++;
-runPhase();
 }
 },1000);
 }
 
-function updateMetronome(){
-metroCounter++;
-let metro=document.getElementById("metro");
-let cycle=metroCounter%5;
-if(cycle===1||cycle===2){
-metro.style.background="#0a0";
-}else if(cycle===3){
-metro.style.background="#06f";
-}else{
-metro.style.background="#a00";
+function nextPhase(){
+clearInterval(timer);
+currentPhaseIndex++;
+runPhase();
 }
-}
+
+// ==========================
+// PROGRESSIONE
+// ==========================
 
 function completeWorkout(){
 if(data.completedDate!==today()){
-if(data.lastDate===today()){
 data.streak++;
-}else{
-data.streak=1;
-}
 }
 data.completedDate=today();
 
@@ -193,9 +259,15 @@ data.categories[cat].streak=0;
 }
 });
 
-localStorage.setItem("workoutV3",JSON.stringify(data));
+localStorage.setItem("workoutV4",JSON.stringify(data));
 renderStatus();
-alert("Salvato e progressione aggiornata");
+alert("Allenamento salvato e progressione aggiornata");
+}
+
+function renderStatus(){
+let done=data.completedDate===today()?"✔ Oggi completato":"";
+document.getElementById("status").innerHTML=
+done+"<br>🔥 Giorni consecutivi: "+data.streak;
 }
 
 generateWorkout();
