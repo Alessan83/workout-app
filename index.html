@@ -1,277 +1,659 @@
+<!-- index.html  (COPIA-INCOLLA TUTTO) -->
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-<meta charset="UTF-8">
-<title>Workout 100</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Workout 100 (offline)</title>
 <style>
-body{font-family:Arial,Helvetica,sans-serif;background:#111;color:#eee;padding:15px;text-align:center}
-button{padding:8px 10px;margin:6px;background:#222;color:#eee;border:1px solid #444;border-radius:6px}
-select,input[type="checkbox"]{background:#222;color:#eee;border:1px solid #444;padding:5px;border-radius:6px}
-.section{margin:18px 0;font-weight:bold;font-size:16px;display:flex;justify-content:center;align-items:center;gap:8px}
-.exercise{border:1px solid #333;padding:10px;margin:8px 0;text-align:left;border-radius:10px;background:#141414}
-a{color:#4da6ff;text-decoration:none}
-.small{font-size:12px;color:#aaa}
-.pill{display:inline-block;border:1px solid #333;padding:4px 8px;margin:4px;background:#151515;border-radius:999px}
-.square{width:14px;height:14px;border:1px solid #444;display:inline-block;margin-right:6px;vertical-align:middle;border-radius:3px}
-.done{background:#2a7a2a}
-hr{border:0;border-top:1px solid #333;margin:14px 0}
-.row{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap}
-.miniCard{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #333;background:#151515;border-radius:12px}
-.badge{display:inline-block;font-size:11px;color:#bbb;border:1px solid #2f2f2f;padding:2px 6px;border-radius:999px;background:#101010}
-.sketch{width:38px;height:38px;border:1px solid #2f2f2f;border-radius:10px;background:#101010;display:flex;align-items:center;justify-content:center}
+  :root{
+    --bg:#0f1115; --panel:#151924; --text:#e8e8e8; --muted:#a8b0c0; --line:#2a3142;
+    --accent:#4da6ff; --ok:#25d366; --warn:#f5c542; --danger:#ff5c5c;
+  }
+  body{font-family:Arial,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:14px;}
+  h1{margin:8px 0 6px 0;font-size:20px;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;margin:10px auto;max-width:980px;}
+  label{font-size:12px;color:var(--muted);}
+  select,button{font-size:14px;}
+  select{background:#0b0d12;color:var(--text);border:1px solid var(--line);padding:6px 8px;border-radius:8px;}
+  button{background:#0b0d12;color:var(--text);border:1px solid var(--line);padding:8px 10px;border-radius:8px;cursor:pointer;}
+  button:active{transform:scale(0.99);}
+  .small{font-size:12px;color:var(--muted);}
+  .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#0b0d12;padding:6px 10px;border-radius:999px;}
+  .streakBox{width:16px;height:16px;border-radius:4px;background:#1b2233;border:1px solid var(--line);display:inline-block;}
+  .streakBox.on{background:var(--ok);border-color:#1c8f47;}
+  .sectionTitle{margin:14px 0 6px 0;font-weight:bold;letter-spacing:0.3px;}
+  .exercise{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;background:#0b0d12;}
+  .exTop{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;}
+  .exName{font-weight:bold;}
+  .exMeta{font-size:12px;color:var(--muted);line-height:1.25;}
+  a{color:var(--accent);text-decoration:none;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr;}}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .note{font-size:12px;color:#cfd6e6;margin-top:6px;line-height:1.25;}
+  .hr{height:1px;background:var(--line);margin:10px 0;}
+  .metCard{display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;}
+  .metViz{
+    width:34px;height:34px;border-radius:50%;
+    background:#22304a;border:1px solid var(--line);
+    box-shadow:0 0 0 0 rgba(77,166,255,0.0);
+    transition:transform .06s ease, box-shadow .06s ease, background .06s ease;
+  }
+  .metViz.on{
+    background:var(--accent);
+    box-shadow:0 0 0 10px rgba(77,166,255,0.08);
+    transform:scale(1.05);
+  }
+  .metStep{font-weight:bold;}
+  .badge{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 8px;background:#0b0d12;color:var(--muted);}
+  .badge.ok{color:#c7ffd9;border-color:#1c8f47;}
+  .badge.warn{color:#fff2c7;border-color:#8a6b11;}
+  .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;background:#0a0c10;border:1px solid var(--line);padding:2px 6px;border-radius:6px;color:#cfd6e6;}
+  .logBox{width:100%;min-height:120px;background:#0a0c10;border:1px solid var(--line);border-radius:10px;color:#cfd6e6;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;white-space:pre-wrap;}
 </style>
 </head>
 <body>
 
-<h2>Workout 100</h2>
+<div class="card">
+  <h1>Workout 100</h1>
 
-<div class="row">
-  <span class="miniCard">
-    <label>Durata</label>
-    <select id="mode" onchange="generateWorkout()">
-      <option value="25">25 minuti</option>
-      <option value="35">35 minuti</option>
-    </select>
-  </span>
+  <div class="row">
+    <span class="pill">
+      <span class="streakBox" id="todayBox"></span>
+      <span>Oggi</span>
+      <span class="small">| Giorni consecutivi:</span>
+      <b id="streak">0</b>
+    </span>
 
-  <span class="miniCard">
-    <label>Giorno corsa</label>
-    <input type="checkbox" id="runDay" onchange="generateWorkout()">
-  </span>
+    <span class="pill">
+      <label for="mode">Durata</label>
+      <select id="mode">
+        <option value="25">25 minuti</option>
+        <option value="35">35 minuti</option>
+      </select>
+    </span>
 
-  <span class="miniCard">
-    <label>RPE</label>
-    <select id="sessionRPE">
-      <option value="1">Facile</option>
-      <option value="2" selected>Medio</option>
-      <option value="3">Duro</option>
-    </select>
-  </span>
+    <span class="pill">
+      <label for="rpeGlobal">RPE (3 livelli)</label>
+      <select id="rpeGlobal">
+        <option value="1">1 = facile</option>
+        <option value="2" selected>2 = ok</option>
+        <option value="3">3 = duro</option>
+      </select>
+    </span>
+
+    <span class="pill">
+      <label><input type="checkbox" id="soundOn" /> bip basso</label>
+    </span>
+
+    <button id="regenBtn">Rigenera (oggi)</button>
+  </div>
+
+  <div class="hr"></div>
+
+  <div class="grid2">
+    <div class="card" style="margin:0;">
+      <div class="sectionTitle">Metronomo (visuale)</div>
+      <div class="small">
+        Riscaldamento: ritmo <span class="kbd">2-1-2</span> continuo (5s ciclo), pausa solo tra blocchi.<br>
+        Rilassamento: metronomo 30s.
+      </div>
+      <div class="metCard">
+        <div class="metViz" id="metViz"></div>
+        <div class="metStep" id="metStep">—</div>
+        <div class="small" id="metInfo">Start per attivare. Stop per pausa tra blocchi.</div>
+        <div class="controls">
+          <button id="startWarmMet">Start Riscaldamento</button>
+          <button id="stopMet">Stop</button>
+          <button id="startRelaxMet">Start Rilassamento (30s)</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin:0;">
+      <div class="sectionTitle">Sessione (struttura fissa)</div>
+      <div class="small">
+        Ordine sempre uguale:<br>
+        1) Mobilità/Attivazione → 2) Riscaldamento → 3) Allenamento → 4) Metabolico → 5) Rilassamento<br>
+        <span class="small">Esercizi totali: <b id="exCount">—</b> (varia in base alla durata)</span>
+      </div>
+      <div class="hr"></div>
+      <button id="completeBtn">Allenamento completato (salva)</button>
+      <div class="small" id="saveStatus"></div>
+      <div class="hr"></div>
+      <div class="small">
+        Nota rachide: evita flessione lombare sotto carico; core anti-estensione/anti-rotazione; mobilità toracica ogni seduta.
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="row">
-  <span id="doneSquare" class="square"></span>
-  <span class="pill">Streak: <span id="streak">0</span></span>
-  <span class="pill">Totali: <span id="totalW">0</span></span>
-  <span class="pill">Settimana: <span id="cycleW">1</span>/4</span>
+<div class="card" id="programCard">
+  <div class="sectionTitle">Sessione di oggi (random controllato, stabile per oggi)</div>
+  <div class="small">Cambia solo se premi “Rigenera (oggi)” o cambi durata.</div>
+  <div class="hr"></div>
+  <div id="program"></div>
 </div>
 
-<hr>
-<div id="program"></div>
-<hr>
-
-<div class="row">
-  <span class="pill">Fase: <b id="phase">—</b></span>
-  <span class="pill">Tempo: <b id="timeLeft">—</b></span>
-</div>
-
-<div class="row">
-  <button onclick="startSession()">Start</button>
-  <button onclick="nextPhase()">Next</button>
-  <button onclick="completeWorkout()">Allenamento completato</button>
-</div>
-
-<div class="row">
-  <button onclick="exportLog()">Esporta log</button>
+<div class="card">
+  <div class="sectionTitle">Log (copiabile per ChatGPT)</div>
+  <div class="small">Si aggiorna solo quando premi <b>Allenamento completato</b>.</div>
+  <div class="hr"></div>
+  <div class="logBox" id="logBox"></div>
 </div>
 
 <script>
+/* =========================================================
+   MODALITÀ B: DB ESTERNO (exercises.json)
+   - Metti exercises.json nella stessa cartella di index.html
+   - L'app fa fetch("exercises.json")
+========================================================= */
 
-/* ================= STORAGE ================= */
-const STORE="workoutV10";
-let data = JSON.parse(localStorage.getItem(STORE)) || {
-completedDate:null,
-streak:0,
-totalWorkouts:0,
-bandIndex:0,
-baseReps:12,
-logs:[]
-};
-function save(){localStorage.setItem(STORE,JSON.stringify(data));}
-function today(){return new Date().toISOString().split("T")[0];}
+let exerciseDB = null; // verrà popolato da exercises.json
 
-/* ================= PERIODIZZAZIONE ================= */
-const BAND_LEVELS=[15,25,35];
-
-function weekInCycle(){
-return Math.floor((data.totalWorkouts % 16)/4)+1;
+function ytSearchUrlFromQuery(q){
+  return "https://www.youtube.com/results?search_query=" + encodeURIComponent((q||"") + " tutorial");
 }
 
-/* ================= STRUTTURA RX BASED ================= */
-function structuralBias(){
-return{
-thoracicFocus:true,
-protectLumbar:true,
-week:weekInCycle()
+/* ==========================
+   STORAGE
+========================== */
+const STORAGE_KEY = "workout100_v9";
+const DEFAULT_DATA = {
+  startDate: new Date().toISOString().split("T")[0],
+  lastGeneratedKey: null,
+  dayPicks: null,
+  completedDate: null,
+  streak: 0,
+  prog: { upper:{band:15,repIndex:2}, core:{band:15,repIndex:1}, lower:{band:15,repIndex:1} },
+  history: {}, // per categoria
+  sessions: []
 };
+let data = loadData();
+
+function loadData(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return structuredClone(DEFAULT_DATA);
+    const parsed = JSON.parse(raw);
+    return {
+      ...structuredClone(DEFAULT_DATA),
+      ...parsed,
+      prog: {...structuredClone(DEFAULT_DATA.prog), ...(parsed.prog||{})},
+      history: parsed.history || {},
+      sessions: parsed.sessions || []
+    };
+  }catch(e){
+    return structuredClone(DEFAULT_DATA);
+  }
+}
+function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+function today(){ return new Date().toISOString().split("T")[0]; }
+function daysBetween(d1, d2){
+  const a = new Date(d1+"T00:00:00");
+  const b = new Date(d2+"T00:00:00");
+  return Math.floor((b-a)/86400000);
 }
 
-/* ================= DATABASE ================= */
-const DB={
-warm:["Jumping Jacks","High Knees","Shadow Boxing","Inchworm","Scapular Push-up"],
-mob:["Thoracic Rotation","Open Book","Wall Slides","Cat-Cow"],
-stretch:["Child Pose","Hip Flexor Stretch","Hamstring Stretch"],
-train:[
-{name:"Band Row",t:"pull"},
-{name:"Band Face Pull",t:"pull"},
-{name:"Band Pull-Apart",t:"pull"},
-{name:"Push-up",t:"push"},
-{name:"Incline Push-up",t:"push"},
-{name:"Band Overhead Press",t:"push"},
-{name:"Glute Bridge (band)",t:"hinge"},
-{name:"Banded RDL",t:"hinge"},
-{name:"Monster Walk",t:"hinge"},
-{name:"Plank",t:"core"},
-{name:"Dead Bug",t:"core"}
-]
-};
-
-/* ================= RANDOM STABILE ================= */
+/* ==========================
+   RANDOM STABILE + ANTI-RIPETIZIONE
+========================== */
 function mulberry32(a){return function(){var t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296;}}
-function seedFromDate(str){let n=0;for(let i=0;i<str.length;i++)n=(n*31+str.charCodeAt(i))>>>0;return n;}
-
-function pickStable(list,count,key){
-const rng=mulberry32(seedFromDate(today()+key));
-let arr=[...list];
-for(let i=arr.length-1;i>0;i--){
-const j=Math.floor(rng()*(i+1));
-[arr[i],arr[j]]=[arr[j],arr[i]];
+function seedFromStr(str){
+  let n=0; for(let i=0;i<str.length;i++) n=(n*31 + str.charCodeAt(i))>>>0;
+  return n;
 }
-return arr.slice(0,count);
-}
+function pickExercises(cat, count, stableKey){
+  const rng = mulberry32(seedFromStr(stableKey+":"+cat));
+  const list = (exerciseDB[cat]||[]).slice();
 
-/* ================= CALCOLO PROGRESSIONE ================= */
-function calcSuggestion(){
-let reps=data.baseReps;
-let band=data.bandIndex;
-let w=weekInCycle();
+  const hist = data.history[cat] || [];
+  let pool = list.filter(x => !hist.includes(x.name));
+  if(pool.length < count) pool = list;
 
-if(w===2) reps+=2;
-if(w===3) reps+=4;
-if(w===4) reps=Math.max(8,reps-4);
+  for(let i=pool.length-1;i>0;i--){
+    const j = Math.floor(rng()*(i+1));
+    [pool[i],pool[j]]=[pool[j],pool[i]];
+  }
+  const picked = pool.slice(0,count);
 
-return{
-band:BAND_LEVELS[band],
-reps:reps,
-cycles:(document.getElementById("mode").value==="25"?2:3)
-};
+  data.history[cat] = [...picked.map(x=>x.name), ...hist].slice(0,30);
+  return picked;
 }
 
-/* ================= RENDER ================= */
-function tutorialLink(name){
-return "https://www.youtube.com/results?search_query="+encodeURIComponent(name+" exercise tutorial");
+/* ==========================
+   REPS / BAND / TEMPO
+========================== */
+const REPS_OPTIONS = [8,10,12,14,16,18,20];
+const BANDS = [15,25,35];
+const TEMPO = "2-1-2"; // 5s/rep
+function clamp(n,min,max){ return Math.max(min, Math.min(max,n)); }
+function currentWeekIndex(){
+  const delta = daysBetween(data.startDate, today());
+  return Math.floor(delta/7);
+}
+function fourWeekPhase(){ return currentWeekIndex() % 4; } // dato interno
+
+function getSuggested(family, mode){
+  const phase = fourWeekPhase(); // interno
+  const p = data.prog[family] || {band:15, repIndex:2};
+  let repIndex = p.repIndex;
+  let band = p.band;
+
+  if(String(mode)==="35") repIndex = clamp(repIndex+1, 0, REPS_OPTIONS.length-1);
+  if(phase===1) repIndex = clamp(repIndex+1, 0, REPS_OPTIONS.length-1);
+  if(phase===3) repIndex = clamp(repIndex-1, 0, REPS_OPTIONS.length-2);
+
+  return {band, reps: REPS_OPTIONS[repIndex], repIndex};
+}
+
+function applyProgression(family, repsDone, repsTarget, rpe){
+  let p = data.prog[family] || {band:15, repIndex:2};
+  let bi = BANDS.indexOf(p.band); if(bi<0) bi=0;
+
+  if(rpe===1 && repsDone >= repsTarget){
+    if(p.repIndex < REPS_OPTIONS.length-1) p.repIndex++;
+    else if(bi < BANDS.length-1){
+      bi++; p.band = BANDS[bi];
+      p.repIndex = 1;
+    }
+  } else if(rpe===3 && repsDone < repsTarget){
+    if(p.repIndex > 0) p.repIndex--;
+    else if(bi > 0){
+      bi--; p.band = BANDS[bi];
+      p.repIndex = 1;
+    }
+  } else if(rpe===2){
+    const recent = data.sessions.slice(-6);
+    const doneCount = recent.reduce((acc,s)=> acc + (s.summary && s.summary.familyCounts && s.summary.familyCounts[family] ? 1 : 0), 0);
+    if(doneCount>=2 && p.repIndex < REPS_OPTIONS.length-1) p.repIndex++;
+  }
+  data.prog[family] = p;
+}
+
+/* ==========================
+   BUILD DAY PROGRAM (9–15) + METABOLICO
+========================== */
+let picks = null;
+
+function buildCounts(mode){
+  // 25 -> 9..15 (ma tipicamente 11..13); 35 -> 13..15
+  // Qui forziamo range coerente e sempre metabolico.
+  const rng = mulberry32(seedFromStr(today()+":"+mode+":counts"));
+  const randInt = (min,max)=>Math.floor(rng()*(max-min+1))+min;
+
+  if(String(mode)==="25"){
+    return {
+      mobility_activation: randInt(3,4),
+      warmup: randInt(2,3),
+      training: randInt(5,7),
+      metabolic: randInt(2,3),
+      relax: 1
+    };
+  } else {
+    return {
+      mobility_activation: randInt(4,5),
+      warmup: 3,
+      training: randInt(7,8),
+      metabolic: 3,
+      relax: 1
+    };
+  }
+}
+
+function ensureTodayProgram(force=false){
+  const mode = document.getElementById("mode").value;
+  const key = today()+":"+mode;
+
+  if(!force && data.lastGeneratedKey===key && data.dayPicks){
+    picks = data.dayPicks;
+    return;
+  }
+
+  const counts = buildCounts(mode);
+  const stableKey = key;
+
+  const mobility_activation = pickExercises("mobility_activation", counts.mobility_activation, stableKey);
+  const warmup = pickExercises("warmup", counts.warmup, stableKey);
+
+  // Training random controllato: in questa versione semplice facciamo pick dal pool "training"
+  // (il DB deve già avere molte opzioni upper/core/lower)
+  const training = pickExercises("training", counts.training, stableKey);
+
+  // Metabolico: sempre presente (se vuoi in futuro: modalità "corsa recente" -> no lower impattante)
+  const metabolic = pickExercises("metabolic", counts.metabolic, stableKey);
+
+  const relax = pickExercises("relax", counts.relax, stableKey);
+
+  picks = { key, counts, mobility_activation, warmup, training, metabolic, relax, createdAt: Date.now() };
+  data.lastGeneratedKey = key;
+  data.dayPicks = picks;
+  saveData();
+}
+
+/* ==========================
+   RENDER
+========================== */
+function repSelectHTML(selected){
+  return REPS_OPTIONS.map(r=>`<option value="${r}" ${r===selected?'selected':''}>${r}</option>`).join("");
+}
+function sketchFor(name){
+  const map = {
+    "Band Row (rematore)":"[ o ]---(====)---[ o ]  ← tira gomiti indietro",
+    "Push-up":"  o\n /|\\  ← corpo in linea\n / \\",
+    "Floor Press (banda)":"(====)  ← spingi\n  \\o/  a terra",
+    "Plank (anti-estensione)":"o----o  ← linea\n|____|  core ON",
+    "RDL (stacco rumeno con banda)":"o\n/|\\  ← hinge\n/ \\   sedere indietro",
+    "MiniLoop Lateral Walk":"[=]  ← loop\n o  o  passi piccoli"
+  };
+  return map[name] || "Schema: controllo • postura • ROM pulito";
+}
+function exerciseHTML(ex, suggestion){
+  const tutUrl = ex.tutorial_url
+    ? ex.tutorial_url
+    : ytSearchUrlFromQuery(ex.tutorial_query || ex.name);
+
+  const showBand = (ex.type==="band" || ex.type==="miniloop");
+  const bandText = showBand ? `<b>${suggestion.band} kg</b>` : `<b>—</b>`;
+
+  return `
+  <div class="exercise" data-family="${ex.family}">
+    <div class="exTop">
+      <div>
+        <div class="exName">${ex.name}</div>
+        <div class="exMeta">
+          Banda consigliata: ${bandText}
+          • Target reps: <b>${suggestion.reps}</b>
+          • Tempo: <b>${TEMPO}</b> (5s/rep)
+          • Tipo: ${ex.type}
+        </div>
+      </div>
+      <div class="controls">
+        <label>Reps fatte</label>
+        <select class="didReps">${repSelectHTML(suggestion.reps)}</select>
+        <a href="${tutUrl}" target="_blank">Tutorial</a>
+      </div>
+    </div>
+    <div class="note">
+      <span class="kbd">${sketchFor(ex.name)}</span><br>
+      <b>Note tecniche:</b> ${ex.note || "—"}
+    </div>
+  </div>`;
+}
+
+function getCycles(mode){
+  return (String(mode)==="35") ? 3 : 2;
 }
 
 function renderProgram(){
-const container=document.getElementById("program");
-container.innerHTML="";
-const sug=calcSuggestion();
+  ensureTodayProgram(false);
+  const mode = document.getElementById("mode").value;
 
-document.getElementById("cycleW").innerText=weekInCycle();
-document.getElementById("streak").innerText=data.streak;
-document.getElementById("totalW").innerText=data.totalWorkouts;
+  const allCount = picks.mobility_activation.length + picks.warmup.length + picks.training.length + picks.metabolic.length + picks.relax.length;
+  document.getElementById("exCount").innerText = String(allCount);
 
-container.innerHTML+="<div class='section'>Mobilità / Riscaldamento</div>";
-pickStable(DB.warm,3,"warm").forEach(e=>{
-container.innerHTML+=`<div class='exercise'><b>${e}</b><div class='small'><a href='${tutorialLink(e)}' target='_blank'>YouTube</a></div></div>`;
-});
-pickStable(DB.mob,2,"mob").forEach(e=>{
-container.innerHTML+=`<div class='exercise'><b>${e}</b><div class='small'><a href='${tutorialLink(e)}' target='_blank'>YouTube</a></div></div>`;
-});
+  const container = document.getElementById("program");
+  container.innerHTML = "";
 
-container.innerHTML+="<div class='section'>Allenamento</div>";
-pickStable(DB.train,7,"train").forEach(e=>{
-container.innerHTML+=`<div class='exercise'>
-<b>${e.name}</b>
-<div class='small'>Banda: ${sug.band}kg | Reps: ${sug.reps} | Cicli: ${sug.cycles}</div>
-<div class='small'><a href='${tutorialLink(e.name)}' target='_blank'>YouTube</a></div>
-</div>`;
-});
+  container.innerHTML += `<div class="sectionTitle">1) Mobilità / Attivazione</div>`;
+  picks.mobility_activation.forEach(ex=>{
+    const fam = (ex.family==="upper") ? "upper" : (ex.family==="lower" ? "lower" : "core");
+    const sug = getSuggested(fam, mode);
+    container.innerHTML += exerciseHTML(ex, sug);
+  });
 
-container.innerHTML+="<div class='section'>Stretch</div>";
-pickStable(DB.stretch,1,"stretch").forEach(e=>{
-container.innerHTML+=`<div class='exercise'><b>${e}</b></div>`;
-});
+  container.innerHTML += `<div class="sectionTitle">2) Riscaldamento (metronomo consigliato)</div>`;
+  picks.warmup.forEach(ex=>{
+    const sug = {band:15, reps: (String(mode)==="35"?12:10), repIndex:2};
+    container.innerHTML += exerciseHTML(ex, sug);
+  });
+
+  const cycles = getCycles(mode);
+  container.innerHTML += `<div class="sectionTitle">3) Allenamento</div>
+    <div class="small">Esecuzione consigliata: <b>${cycles} cicli</b> (giro completo) • pausa solo tra cicli (30–60s).</div>`;
+  picks.training.forEach(ex=>{
+    const fam = (ex.family==="upper") ? "upper" : (ex.family==="lower" ? "lower" : "core");
+    const sug = getSuggested(fam, mode);
+    container.innerHTML += exerciseHTML(ex, sug);
+  });
+
+  container.innerHTML += `<div class="sectionTitle">4) Metabolico (sempre presente)</div>
+    <div class="small">Tecnico, controllato. Se sei “scarico” resta su upper+core.</div>`;
+  picks.metabolic.forEach(ex=>{
+    const fam = (ex.family==="upper") ? "upper" : (ex.family==="lower" ? "lower" : "core");
+    const sug = getSuggested(fam, mode);
+    container.innerHTML += exerciseHTML(ex, sug);
+  });
+
+  container.innerHTML += `<div class="sectionTitle">5) Rilassamento</div>
+    <div class="small">Metronomo 30s consigliato in rilassamento.</div>`;
+  picks.relax.forEach(ex=>{
+    const sug = {band:15, reps: 8, repIndex:0};
+    container.innerHTML += exerciseHTML(ex, sug);
+  });
+
+  saveData(); // salva history aggiornata
 }
 
-/* ================= TIMER ================= */
-let phases=[],current=0,timer=null,audioCtx=null,gainNode=null;
+/* ==========================
+   STREAK + SAVE (solo su "Allenamento completato")
+========================== */
+function renderStatus(){
+  const todayDone = (data.completedDate === today());
+  document.getElementById("todayBox").className = "streakBox" + (todayDone ? " on" : "");
+  document.getElementById("streak").innerText = String(data.streak || 0);
+  document.getElementById("saveStatus").innerHTML = todayDone
+    ? `<span class="badge ok">Oggi salvato</span>`
+    : `<span class="badge warn">Non salvato oggi</span>`;
+}
+
+function completeWorkout(){
+  const mode = document.getElementById("mode").value;
+  const rpe = parseInt(document.getElementById("rpeGlobal").value,10);
+
+  const t = today();
+  const prev = data.completedDate;
+  if(prev !== t){
+    if(prev){
+      const d = daysBetween(prev, t);
+      data.streak = (d===1) ? (data.streak+1) : 1;
+    } else data.streak = 1;
+  }
+  data.completedDate = t;
+
+  const exEls = Array.from(document.querySelectorAll(".exercise"));
+  const picksLog = [];
+  const familyCounts = {upper:0, core:0, lower:0};
+
+  exEls.forEach(el=>{
+    const name = el.querySelector(".exName").innerText.trim();
+    const family = el.getAttribute("data-family") || "core";
+    const repsDone = parseInt(el.querySelector(".didReps").value,10);
+
+    const ex = findExerciseByName(name);
+    const fam = (ex?.family==="upper") ? "upper" : (ex?.family==="lower" ? "lower" : "core");
+    const sug = getSuggested(fam, mode);
+
+    picksLog.push({
+      name,
+      family: fam,
+      type: ex?.type || "bodyweight",
+      bandSuggested: sug.band,
+      repsTarget: sug.reps,
+      repsDone,
+      tempo: TEMPO,
+      tutorial: ex?.tutorial_url || ytSearchUrlFromQuery(ex?.tutorial_query || name)
+    });
+
+    familyCounts[fam] = (familyCounts[fam]||0)+1;
+
+    applyProgression(fam, repsDone, sug.reps, rpe);
+  });
+
+  const session = {
+    date: t,
+    mode,
+    rpe,
+    stableKey: picks?.key || null,
+    counts: picks?.counts || null,
+    picks: picksLog,
+    summary: { familyCounts },
+    internalPhase: fourWeekPhase()
+  };
+
+  data.sessions.push(session);
+  if(data.sessions.length > 120) data.sessions = data.sessions.slice(-120);
+
+  saveData();
+  renderStatus();
+  updateLogBox();
+  alert("Allenamento salvato. Progressione aggiornata.");
+}
+
+function findExerciseByName(name){
+  for(const cat of Object.keys(exerciseDB||{})){
+    for(const ex of exerciseDB[cat]){
+      if(ex.name === name) return ex;
+    }
+  }
+  return null;
+}
+
+/* ==========================
+   LOG BOX
+========================== */
+function updateLogBox(){
+  const last = data.sessions.slice(-1)[0];
+  if(!last){
+    document.getElementById("logBox").innerText =
+      "Nessun allenamento salvato.\nPremi “Allenamento completato (salva)” per registrare.";
+    return;
+  }
+  const lines = [];
+  lines.push("WORKOUT100_LOG");
+  lines.push(`date: ${last.date}`);
+  lines.push(`mode_min: ${last.mode}`);
+  lines.push(`rpe_3lvl: ${last.rpe}`);
+  lines.push(`streak_days: ${data.streak}`);
+  lines.push(`internal_phase_4w: ${last.internalPhase}`);
+  lines.push(`prog_state: ${JSON.stringify(data.prog)}`);
+  lines.push("exercises:");
+  last.picks.forEach(p=>{
+    lines.push(`- name: ${p.name}`);
+    lines.push(`  family: ${p.family}`);
+    lines.push(`  type: ${p.type}`);
+    lines.push(`  band_suggested: ${p.bandSuggested}`);
+    lines.push(`  reps_target: ${p.repsTarget}`);
+    lines.push(`  reps_done: ${p.repsDone}`);
+    lines.push(`  tempo: ${p.tempo}`);
+    lines.push(`  tutorial: ${p.tutorial}`);
+  });
+  document.getElementById("logBox").innerText = lines.join("\n");
+}
+
+/* ==========================
+   METRONOME
+========================== */
+let audioCtx=null, gainNode=null, metTimer=null, metTick=0;
 
 function initAudio(){
-audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-gainNode=audioCtx.createGain();
-gainNode.gain.value=0.01;
-gainNode.connect(audioCtx.destination);
+  if(audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = 0.015;
+  gainNode.connect(audioCtx.destination);
 }
 function beep(){
-if(!audioCtx) initAudio();
-const osc=audioCtx.createOscillator();
-osc.type="sine";
-osc.frequency.value=520;
-osc.connect(gainNode);
-osc.start();
-osc.stop(audioCtx.currentTime+0.04);
+  if(!document.getElementById("soundOn").checked) return;
+  initAudio();
+  const osc = audioCtx.createOscillator();
+  osc.type="sine"; osc.frequency.value=700;
+  osc.connect(gainNode);
+  osc.start(); osc.stop(audioCtx.currentTime+0.03);
 }
-function buildPhases(){
-const total=parseInt(document.getElementById("mode").value)*60;
-phases=[
-{name:"Warm",time:Math.round(total*0.1),beep:true},
-{name:"Train",time:Math.round(total*0.8),beep:false},
-{name:"Stretch",time:30,beep:true}
-];
+function setMetViz(on){
+  document.getElementById("metViz").className = "metViz" + (on?" on":"");
 }
-function startSession(){
-buildPhases();current=0;runPhase();
+function stopMet(){
+  if(metTimer) clearInterval(metTimer);
+  metTimer=null; metTick=0;
+  setMetViz(false);
+  document.getElementById("metStep").innerText="—";
+  document.getElementById("metInfo").innerText="Fermato (pausa tra blocchi).";
 }
-function runPhase(){
-if(timer)clearInterval(timer);
-if(current>=phases.length)return;
-let p=phases[current];let t=p.time;
-document.getElementById("phase").innerText=p.name;
-timer=setInterval(()=>{
-t--;document.getElementById("timeLeft").innerText=t+" sec";
-if(p.beep)beep();
-if(t<=0){clearInterval(timer);current++;runPhase();}
-},1000);
+function startWarmMet(){
+  stopMet();
+  document.getElementById("metInfo").innerText="Riscaldamento: 2-1-2 continuo. Stop = pausa tra blocchi.";
+  metTimer = setInterval(()=>{
+    metTick++;
+    const phase = metTick % 5;
+    let label="";
+    if(phase===1 || phase===2) label="↓ 2s";
+    else if(phase===3) label="• 1s";
+    else label="↑ 2s";
+    document.getElementById("metStep").innerText=label;
+    setMetViz(true); beep();
+    setTimeout(()=>setMetViz(false),70);
+  }, 1000);
 }
-function nextPhase(){current++;runPhase();}
-
-/* ================= COMPLETE ================= */
-function completeWorkout(){
-if(data.completedDate===today())return;
-data.completedDate=today();
-data.totalWorkouts++;
-data.streak++;
-const rpe=parseInt(document.getElementById("sessionRPE").value);
-
-if(rpe===1 && data.baseReps<18)data.baseReps+=2;
-if(rpe===3)data.baseReps=Math.max(8,data.baseReps-2);
-
-data.logs.unshift({date:today(),rpe:rpe});
-data.logs=data.logs.slice(0,100);
-
-save();
-generateWorkout();
+function startRelaxMet(){
+  stopMet();
+  const total=30;
+  document.getElementById("metInfo").innerText="Rilassamento: 30s (tick/sec).";
+  metTimer = setInterval(()=>{
+    metTick++;
+    const left = total - metTick;
+    document.getElementById("metStep").innerText = `Rilassa • ${left}s`;
+    setMetViz(true); beep();
+    setTimeout(()=>setMetViz(false),70);
+    if(left<=0) stopMet();
+  }, 1000);
 }
 
-/* ================= EXPORT ================= */
-function exportLog(){
-const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-const url=URL.createObjectURL(blob);
-const a=document.createElement("a");
-a.href=url;a.download="workout_log.json";
-a.click();
+/* ==========================
+   LOAD DB + BOOT
+========================== */
+async function loadDB(){
+  try{
+    const res = await fetch("exercises.json", {cache:"no-store"});
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    exerciseDB = await res.json();
+    boot();
+  }catch(e){
+    document.getElementById("program").innerHTML =
+      `<div class="small"><b>Errore:</b> impossibile caricare exercises.json.<br>
+       Verifica che il file sia nella stessa cartella di index.html e che GitHub Pages sia aggiornato.<br>
+       Dettaglio: ${String(e)}</div>`;
+  }
 }
 
-/* ================= INIT ================= */
-function generateWorkout(){
-renderProgram();
-if(data.completedDate===today())document.getElementById("doneSquare").classList.add("done");
-else document.getElementById("doneSquare").classList.remove("done");
-}
-generateWorkout();
+document.getElementById("mode").addEventListener("change", ()=>{ regenerateToday(); });
+document.getElementById("regenBtn").addEventListener("click", ()=>{ regenerateToday(true); });
+document.getElementById("completeBtn").addEventListener("click", completeWorkout);
 
+document.getElementById("startWarmMet").addEventListener("click", startWarmMet);
+document.getElementById("stopMet").addEventListener("click", stopMet);
+document.getElementById("startRelaxMet").addEventListener("click", startRelaxMet);
+
+function regenerateToday(force=true){
+  ensureTodayProgram(force);
+  renderProgram();
+  renderStatus();
+  updateLogBox();
+}
+
+function boot(){
+  ensureTodayProgram(false);
+  renderProgram();
+  renderStatus();
+  updateLogBox();
+}
+
+// AVVIO: prima carica DB
+loadDB();
 </script>
+
 </body>
 </html>
