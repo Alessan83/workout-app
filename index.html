@@ -8,9 +8,12 @@
 body{font-family:Arial;background:#111;color:#eee;padding:15px;text-align:center}
 button{padding:8px;margin:6px;background:#222;color:#eee;border:1px solid #444}
 select{background:#222;color:#eee;border:1px solid #444;padding:5px}
-.section{margin:15px 0}
-.exercise{border:1px solid #333;padding:8px;margin:6px 0}
+.section{margin:15px 0;font-weight:bold}
+.exercise{border:1px solid #333;padding:8px;margin:6px 0;text-align:left}
 a{color:#4da6ff;text-decoration:none}
+.small{font-size:12px;color:#aaa}
+.square{width:14px;height:14px;border:1px solid #444;display:inline-block;margin-right:5px}
+.done{background:#2a7a2a}
 </style>
 </head>
 <body>
@@ -28,36 +31,53 @@ Allenamento: <span id="workoutType"></span>
 </select>
 </div>
 
-<div id="status"></div>
+<div>
+<span id="doneSquare" class="square"></span>
+🔥 Streak: <span id="streak">0</span>
+</div>
+
+<hr>
 
 <div id="program"></div>
 
-<div class="section">
-<div id="phase"></div>
+<hr>
+
+<div>
+<div><b id="phase">—</b></div>
 <div id="timeLeft"></div>
-<button onclick="startPhase()">Start Fase</button>
+<button onclick="startSession()">Start Sessione</button>
 <button onclick="nextPhase()">Fase Successiva</button>
 </div>
 
+<br>
 <button onclick="completeWorkout()">Allenamento completato</button>
 
 <script>
 
-// ==========================
-// DATABASE BASE
-// ==========================
+/* ===========================
+   STORAGE
+=========================== */
 
-let data = JSON.parse(localStorage.getItem("workoutV4")) || {
-startDate:new Date().toISOString().split("T")[0],
+const STORE="workoutV6";
+
+let data=JSON.parse(localStorage.getItem(STORE))||{
 lastDate:null,
 lastWorkout:0,
+completedDate:null,
 streak:0,
 categories:{
-pull:{band:15,time:40,streak:0},
-push:{band:15,time:40,streak:0},
-posterior:{band:25,time:40,streak:0}
+pull:{band:0,reps:12},
+push:{band:0,reps:12},
+posterior:{band:1,reps:12}
 }
 };
+
+function save(){localStorage.setItem(STORE,JSON.stringify(data));}
+function today(){return new Date().toISOString().split("T")[0];}
+
+/* ===========================
+   ROTAZIONE 1-2-3
+=========================== */
 
 const workouts={
 1:["pull","push","posterior"],
@@ -65,210 +85,246 @@ const workouts={
 3:["posterior","pull","push"]
 };
 
-const exerciseDB={
-warm:["Jumping Jacks","High Knees","Arm Circles"],
-mobility:["Hip CARs","Thoracic Rotation","Ankle Rock"],
-core:["Plank","Dead Bug","Side Plank"],
-stretch:["Child Pose","Hamstring Stretch","Hip Flexor Stretch"],
-pull:["Band Row","Face Pull","High Row"],
-push:["Push-up","Floor Press","Pike Push-up"],
-posterior:["Deadlift","Glute Bridge","Good Morning"]
-};
-
-// ==========================
-// ROTAZIONE GIORNALIERA
-// ==========================
-
-function today(){
-return new Date().toISOString().split("T")[0];
-}
-
 function generateWorkout(){
 if(data.lastDate!==today()){
-data.lastWorkout = data.lastWorkout%3 +1;
+data.lastWorkout=(data.lastWorkout%3)+1;
 data.lastDate=today();
-localStorage.setItem("workoutV4",JSON.stringify(data));
+save();
 }
 document.getElementById("workoutType").innerText=data.lastWorkout;
-renderProgram();
 renderStatus();
+renderProgram();
 }
 
-// ==========================
-// PROGRAMMA SESSIONE
-// ==========================
-
-let phases=[];
-let currentPhaseIndex=0;
-let timer;
-let audioCtx;
-let gainNode;
-
-function buildPhases(){
-let mode=document.getElementById("mode").value;
-let warmTime=mode==="25"?120:180;
-let mobilityTime=mode==="25"?120:180;
-let blockTime=mode==="25"?300:420;
-let coreTime=mode==="25"?120:180;
-let stretchTime=mode==="25"?120:180;
-
-phases=[];
-
-phases.push({name:"Riscaldamento",time:warmTime,metronome:true});
-phases.push({name:"Mobilità",time:mobilityTime,metronome:false});
-
-workouts[data.lastWorkout].forEach(cat=>{
-phases.push({name:"Blocco "+cat,time:blockTime,metronome:true,category:cat});
-});
-
-phases.push({name:"Core",time:coreTime,metronome:true});
-phases.push({name:"Stretch",time:30,metronome:true});
+function renderStatus(){
+document.getElementById("streak").innerText=data.streak;
+if(data.completedDate===today()){
+document.getElementById("doneSquare").classList.add("done");
+}else{
+document.getElementById("doneSquare").classList.remove("done");
+}
 }
 
-// ==========================
-// RENDER PROGRAMMA
-// ==========================
+/* ===========================
+   DATABASE ESERCIZI
+=========================== */
+
+const exerciseDB={
+warm:["Jumping Jacks","High Knees","Shadow Boxing","Inchworm","Arm Circles"],
+mobility:["Thoracic Rotation","Hip CARs","Ankle Rock","Cat Cow","Deep Squat Hold"],
+core:["Plank","Dead Bug","Side Plank","Hollow Hold"],
+stretch:["Child Pose","Hip Flexor Stretch","Hamstring Stretch"],
+pull:["Band Row","Face Pull","Band Curl","Reverse Fly","Lat Pulldown Band"],
+push:["Push-up","Floor Press Band","Overhead Press Band","Diamond Push-up"],
+posterior:["Banded Deadlift","Glute Bridge","Good Morning Band","Single Leg RDL"]
+};
+
+/* ===========================
+   RANDOM STABILE + ANTI RIPETIZIONE
+=========================== */
+
+function mulberry32(a){return function(){var t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296;}}
+function seedFromDate(str){let n=0;for(let i=0;i<str.length;i++)n=(n*31+str.charCodeAt(i))>>>0;return n;}
+function pickExercises(cat,count){
+const rng=mulberry32(seedFromDate(today()+cat));
+let arr=exerciseDB[cat].slice();
+for(let i=arr.length-1;i>0;i--){
+const j=Math.floor(rng()*(i+1));
+[arr[i],arr[j]]=[arr[j],arr[i]];
+}
+return arr.slice(0,count);
+}
+
+/* ===========================
+   RENDER PROGRAMMA
+=========================== */
+
+function tutorialLink(name){
+return "https://www.youtube.com/results?search_query="+encodeURIComponent(name+" tutorial");
+}
 
 function renderProgram(){
 let container=document.getElementById("program");
 container.innerHTML="";
 
-let warm = exerciseDB.warm.slice(0,2);
-let mobility = exerciseDB.mobility.slice(0,2);
-let core = exerciseDB.core.slice(0,1);
-let stretch = exerciseDB.stretch.slice(0,1);
+let warm=pickExercises("warm",3);
+let mobility=pickExercises("mobility",2);
+let core=pickExercises("core",1);
+let stretch=pickExercises("stretch",1);
 
-container.innerHTML+="<div class='section'><b>Riscaldamento</b></div>";
-warm.forEach(ex=>{
-container.innerHTML+=exerciseHTML(ex);
-});
+container.innerHTML+="<div class='section'>Riscaldamento</div>";
+warm.forEach(e=>container.innerHTML+=exerciseHTML(e));
 
-container.innerHTML+="<div class='section'><b>Mobilità</b></div>";
-mobility.forEach(ex=>{
-container.innerHTML+=exerciseHTML(ex);
-});
+container.innerHTML+="<div class='section'>Mobilità</div>";
+mobility.forEach(e=>container.innerHTML+=exerciseHTML(e));
 
 workouts[data.lastWorkout].forEach(cat=>{
-container.innerHTML+="<div class='section'><b>"+cat.toUpperCase()+"</b></div>";
-let exList = exerciseDB[cat].slice(0,2);
-exList.forEach(ex=>{
-container.innerHTML+=exerciseHTML(ex,data.categories[cat]);
+container.innerHTML+="<div class='section'>"+cat.toUpperCase()+"</div>";
+let list=pickExercises(cat,3);
+list.forEach((e,i)=>{
+container.innerHTML+=exerciseStrengthHTML(e,cat,i);
 });
 });
 
-container.innerHTML+="<div class='section'><b>Core</b></div>";
-core.forEach(ex=>{
-container.innerHTML+=exerciseHTML(ex);
-});
+container.innerHTML+="<div class='section'>Core</div>";
+core.forEach(e=>container.innerHTML+=exerciseHTML(e));
 
-container.innerHTML+="<div class='section'><b>Stretch</b></div>";
-stretch.forEach(ex=>{
-container.innerHTML+=exerciseHTML(ex);
-});
+container.innerHTML+="<div class='section'>Stretch</div>";
+stretch.forEach(e=>container.innerHTML+=exerciseHTML(e));
 }
 
-function exerciseHTML(name,catData){
-let link="https://www.youtube.com/results?search_query="+encodeURIComponent(name+" exercise tutorial");
-let extra="";
-if(catData){
-extra="Banda: "+catData.band+"kg | Tempo lavoro: "+catData.time+" sec";
-}
-return `
-<div class="exercise">
-<b>${name}</b><br>
-${extra}<br>
-<a href="${link}" target="_blank">Apri tutorial</a>
+function exerciseHTML(name){
+return `<div class="exercise">
+<b>${name}</b>
+<div class="small"><a href="${tutorialLink(name)}" target="_blank">Apri tutorial</a></div>
 </div>`;
 }
 
-// ==========================
-// TIMER + METRONOMO
-// ==========================
+const bands=[15,25,35];
+
+function exerciseStrengthHTML(name,cat,i){
+let suggestedBand=bands[data.categories[cat].band];
+let suggestedReps=data.categories[cat].reps;
+return `<div class="exercise">
+<b>${name}</b>
+Banda:
+<select id="${cat}_band_${i}">
+<option value="0">15kg</option>
+<option value="1">25kg</option>
+<option value="2">35kg</option>
+</select>
+Reps:
+<select id="${cat}_reps_${i}">
+${[8,10,12,14,16,18,20].map(r=>`<option ${r===suggestedReps?"selected":""}>${r}</option>`).join("")}
+</select>
+RPE:
+<select id="${cat}_rpe_${i}">
+<option value="1">Facile</option>
+<option value="2" selected>Medio</option>
+<option value="3">Duro</option>
+</select>
+<div class="small">Target: ${suggestedBand}kg / ${suggestedReps} reps</div>
+<div class="small"><a href="${tutorialLink(name)}" target="_blank">Apri tutorial</a></div>
+</div>`;
+}
+
+/* ===========================
+   TIMER + METRONOMO
+=========================== */
+
+let phases=[];
+let current=0;
+let timer=null;
+let audioCtx=null;
+let gainNode=null;
 
 function initAudio(){
-audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+audioCtx=new(window.AudioContext||window.webkitAudioContext)();
 gainNode=audioCtx.createGain();
-gainNode.gain.value=0.02;
+gainNode.gain.value=0.01;
 gainNode.connect(audioCtx.destination);
 }
 
 function beep(){
+if(!audioCtx)initAudio();
 let osc=audioCtx.createOscillator();
-osc.type="sine";
-osc.frequency.value=800;
+osc.frequency.value=500;
 osc.connect(gainNode);
 osc.start();
-osc.stop(audioCtx.currentTime+0.05);
+osc.stop(audioCtx.currentTime+0.04);
 }
 
-function startPhase(){
-if(!audioCtx) initAudio();
+function startSession(){
 buildPhases();
+current=0;
 runPhase();
 }
 
+function buildPhases(){
+let total=parseInt(document.getElementById("mode").value)*60;
+
+let warm=Math.round(total*0.03);
+let mobility=Math.round(total*0.02);
+let core=Math.round(total*0.02);
+let stretch=Math.max(Math.round(total*0.03),30);
+
+let exerciseTime=total-(warm+mobility+core+stretch);
+let block=Math.floor(exerciseTime/3);
+
+phases=[
+{name:"Riscaldamento",time:warm,metronome:true},
+{name:"Mobilità",time:mobility,metronome:false},
+{name:"Blocco 1",time:block,metronome:false},
+{name:"Pausa",time:30,metronome:false},
+{name:"Blocco 2",time:block,metronome:false},
+{name:"Pausa",time:30,metronome:false},
+{name:"Blocco 3",time:block,metronome:false},
+{name:"Core",time:core,metronome:false},
+{name:"Rilassamento 30s",time:30,metronome:true}
+];
+}
+
 function runPhase(){
-if(currentPhaseIndex>=phases.length){
-clearInterval(timer);
-document.getElementById("phase").innerText="Sessione completata";
+if(current>=phases.length){
+document.getElementById("phase").innerText="Sessione finita";
 return;
 }
-let phase=phases[currentPhaseIndex];
-let timeLeft=phase.time;
+let phase=phases[current];
+let t=phase.time;
 document.getElementById("phase").innerText=phase.name;
-
 timer=setInterval(()=>{
-timeLeft--;
-document.getElementById("timeLeft").innerText=timeLeft+" sec";
-
-if(phase.metronome) beep();
-
-if(timeLeft<=0){
+t--;
+document.getElementById("timeLeft").innerText=t+" sec";
+if(phase.metronome)beep();
+if(t<=0){
 clearInterval(timer);
-currentPhaseIndex++;
+current++;
+runPhase();
 }
 },1000);
 }
 
 function nextPhase(){
 clearInterval(timer);
-currentPhaseIndex++;
+current++;
 runPhase();
 }
 
-// ==========================
-// PROGRESSIONE
-// ==========================
+/* ===========================
+   PROGRESSIONE
+=========================== */
 
 function completeWorkout(){
-if(data.completedDate!==today()){
+if(data.completedDate===today())return alert("Già completato oggi");
+
 data.streak++;
-}
 data.completedDate=today();
 
 workouts[data.lastWorkout].forEach(cat=>{
-data.categories[cat].streak++;
-if(data.categories[cat].streak>=2){
-if(data.categories[cat].time<50){
-data.categories[cat].time+=5;
-}else{
-data.categories[cat].band+=10;
-data.categories[cat].time=40;
+let repsAvg=0;
+let count=0;
+for(let i=0;i<3;i++){
+let reps=parseInt(document.getElementById(`${cat}_reps_${i}`).value);
+let rpe=parseInt(document.getElementById(`${cat}_rpe_${i}`).value);
+repsAvg+=reps;
+count++;
+if(rpe===1&&reps>=data.categories[cat].reps+4){
+data.categories[cat].reps=Math.min(20,data.categories[cat].reps+2);
 }
-data.categories[cat].streak=0;
+if(rpe===3&&reps<data.categories[cat].reps){
+data.categories[cat].reps=Math.max(8,data.categories[cat].reps-2);
+}
 }
 });
 
-localStorage.setItem("workoutV4",JSON.stringify(data));
+save();
 renderStatus();
-alert("Allenamento salvato e progressione aggiornata");
+alert("Allenamento salvato");
 }
 
-function renderStatus(){
-let done=data.completedDate===today()?"✔ Oggi completato":"";
-document.getElementById("status").innerHTML=
-done+"<br>🔥 Giorni consecutivi: "+data.streak;
-}
+/* ===========================
+   INIT
+=========================== */
 
 generateWorkout();
 
