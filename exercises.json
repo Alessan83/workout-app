@@ -1,4 +1,3 @@
-// exercises.json  (COPIA-INCOLLA TUTTO IN UN FILE CHIAMATO ESATTAMENTE "exercises.json")
 {
   "mobility_activation": [
     {"name":"Cat-Cow (toracica)","type":"bodyweight","family":"core","note":"Segmenta la colonna. Movimento lento. Respiro.","tutorial_query":"cat cow mobility"},
