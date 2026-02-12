@@ -5,164 +5,201 @@
 <title>Workout 100</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:Arial;background:#111;color:#eee;padding:10px}
-button{padding:8px;margin:4px;background:#222;color:#eee;border:1px solid #444}
+body{font-family:Arial;background:#111;color:#eee;padding:15px;text-align:center}
+button{padding:8px;margin:6px;background:#222;color:#eee;border:1px solid #444}
 select{background:#222;color:#eee;border:1px solid #444;padding:5px}
-.exercise{border:1px solid #333;padding:8px;margin:6px 0}
-.calendar{display:grid;grid-template-columns:repeat(10,1fr);gap:2px;margin-top:10px}
-.day{width:100%;padding-top:100%;position:relative}
-.day div{position:absolute;top:0;bottom:0;left:0;right:0;font-size:10px;display:flex;align-items:center;justify-content:center}
-.done{background:#064}
-.empty{background:#333}
-h3{margin-top:20px}
+#metro{width:80px;height:80px;margin:20px auto;background:#333}
+.phase{margin:10px;font-weight:bold}
 .small{font-size:12px;color:#aaa}
+.block{margin:10px 0;padding:8px;border:1px solid #333}
 </style>
 </head>
 <body>
 
 <h2>Workout 100</h2>
-<div>Giorno: <span id="dayNumber"></span>/100</div>
-<div>Allenamento: <span id="workoutType"></span></div>
 
-<div id="workout"></div>
+<div>
+Allenamento: <span id="workoutType"></span>
+</div>
 
+<div>
+<select id="mode">
+<option value="25">25 minuti</option>
+<option value="35">35 minuti</option>
+</select>
+</div>
+
+<div id="status"></div>
+
+<div id="session"></div>
+
+<div id="metro"></div>
+<div class="phase" id="phaseText"></div>
+<div id="timeLeft"></div>
+
+<button onclick="startSession()">Start Sessione</button>
 <button onclick="completeWorkout()">Allenamento completato</button>
-
-<h3>Calendario</h3>
-<div id="calendar" class="calendar"></div>
 
 <script>
 
-let data = JSON.parse(localStorage.getItem("workoutData")) || {
-    startDate: new Date().toISOString().split("T")[0],
-    lastGeneratedDate: null,
-    lastWorkoutType: 0,
-    sessions: [],
-    categories:{
-        pull:{band:15,reps:12,streak:0},
-        push:{band:15,reps:12,streak:0},
-        posterior:{band:25,reps:10,streak:0},
-        core:{reps:30,streak:0}
-    }
+let data = JSON.parse(localStorage.getItem("workoutV3")) || {
+startDate:new Date().toISOString().split("T")[0],
+lastDate:null,
+lastWorkout:0,
+streak:0,
+categories:{
+pull:{band:15,time:40,streak:0},
+push:{band:15,time:40,streak:0},
+posterior:{band:25,time:40,streak:0}
+}
 };
 
-const workouts = {
-    1:["pull","core","push"],
-    2:["push","core","posterior"],
-    3:["posterior","core","pull"]
+const workouts={
+1:["pull","push","posterior"],
+2:["push","posterior","pull"],
+3:["posterior","pull","push"]
 };
 
-const exercises = {
-    pull:["Band Row","High Row","Face Pull"],
-    push:["Push-up","Floor Press","Pike Push-up"],
-    posterior:["Deadlift","Good Morning","Glute Bridge"],
-    core:["Plank","Dead Bug","Side Plank"]
+const exerciseDB={
+pull:["Band Row","Face Pull","High Row"],
+push:["Push-up","Floor Press","Pike Push-up"],
+posterior:["Deadlift","Glute Bridge","Good Morning"]
 };
 
-function getDayNumber(){
-    const start=new Date(data.startDate);
-    const now=new Date();
-    return Math.min(100,Math.floor((now-start)/(1000*60*60*24))+1);
+function today(){
+return new Date().toISOString().split("T")[0];
 }
 
-document.getElementById("dayNumber").innerText=getDayNumber();
-
-function generateWorkoutIfNeeded(){
-    const today=new Date().toISOString().split("T")[0];
-    if(data.lastGeneratedDate!==today){
-        data.lastWorkoutType = data.lastWorkoutType%3 +1;
-        data.todayWorkout = workouts[data.lastWorkoutType];
-        data.lastGeneratedDate=today;
-        localStorage.setItem("workoutData",JSON.stringify(data));
-    }
-    document.getElementById("workoutType").innerText=data.lastWorkoutType;
+function generateWorkout(){
+if(data.lastDate!==today()){
+data.lastWorkout = data.lastWorkout%3 +1;
+data.lastDate=today();
+localStorage.setItem("workoutV3",JSON.stringify(data));
+}
+document.getElementById("workoutType").innerText=data.lastWorkout;
+renderSession();
+renderStatus();
 }
 
-function renderWorkout(){
-    const container=document.getElementById("workout");
-    container.innerHTML="";
-    data.todayWorkout.forEach(cat=>{
-        const ex=exercises[cat][Math.floor(Math.random()*exercises[cat].length)];
-        const div=document.createElement("div");
-        div.className="exercise";
-        if(cat==="core"){
-            div.innerHTML=`
-            <b>${ex}</b><br>
-            Target: ${data.categories[cat].reps} sec<br>
-            RPE:
-            <select id="${cat}-rpe">
-            <option>Facile</option>
-            <option>Medio</option>
-            <option>Duro</option>
-            </select>
-            `;
-        }else{
-            div.innerHTML=`
-            <b>${ex}</b><br>
-            Banda consigliata: ${data.categories[cat].band} kg<br>
-            Target reps: ${data.categories[cat].reps}<br>
-            RPE:
-            <select id="${cat}-rpe">
-            <option>Facile</option>
-            <option>Medio</option>
-            <option>Duro</option>
-            </select>
-            `;
-        }
-        container.appendChild(div);
-    });
+function renderStatus(){
+let completedToday = data.completedDate===today();
+document.getElementById("status").innerHTML=
+(completedToday?"✔ Oggi completato":"")+
+"<br>🔥 Giorni consecutivi: "+data.streak;
+}
+
+function renderSession(){
+let container=document.getElementById("session");
+container.innerHTML="";
+workouts[data.lastWorkout].forEach(cat=>{
+let ex=exerciseDB[cat][Math.floor(Math.random()*exerciseDB[cat].length)];
+container.innerHTML+=`
+<div class="block">
+<b>${ex}</b><br>
+Banda: ${data.categories[cat].band} kg<br>
+Tempo lavoro: ${data.categories[cat].time} sec
+</div>`;
+});
+}
+
+let timer;
+let currentPhaseIndex=0;
+let phases=[];
+let metroCounter=0;
+
+function buildPhases(){
+let mode=document.getElementById("mode").value;
+let total = mode==="25"?1500:2100;
+let warm = mode==="25"?90:120;
+let mobility = mode==="25"?90:120;
+let core = mode==="25"?90:120;
+let stretch = mode==="25"?60:90;
+
+let blockTime = (total - warm - mobility - core - stretch)/3;
+
+phases=[
+{name:"Riscaldamento",time:warm},
+{name:"Mobilità",time:mobility}
+];
+
+workouts[data.lastWorkout].forEach(cat=>{
+phases.push({name:"Blocco "+cat,time:blockTime});
+});
+
+phases.push({name:"Core controllo",time:core});
+phases.push({name:"Stretch",time:stretch});
+}
+
+function startSession(){
+buildPhases();
+currentPhaseIndex=0;
+runPhase();
+}
+
+function runPhase(){
+if(currentPhaseIndex>=phases.length){
+clearInterval(timer);
+document.getElementById("phaseText").innerText="Sessione finita";
+return;
+}
+let phase=phases[currentPhaseIndex];
+let timeLeft=phase.time;
+document.getElementById("phaseText").innerText=phase.name;
+timer=setInterval(()=>{
+timeLeft--;
+document.getElementById("timeLeft").innerText=timeLeft+" sec";
+updateMetronome();
+if(timeLeft<=0){
+clearInterval(timer);
+currentPhaseIndex++;
+runPhase();
+}
+},1000);
+}
+
+function updateMetronome(){
+metroCounter++;
+let metro=document.getElementById("metro");
+let cycle=metroCounter%5;
+if(cycle===1||cycle===2){
+metro.style.background="#0a0";
+}else if(cycle===3){
+metro.style.background="#06f";
+}else{
+metro.style.background="#a00";
+}
 }
 
 function completeWorkout(){
-    data.sessions.push({date:new Date().toISOString().split("T")[0]});
-    data.todayWorkout.forEach(cat=>{
-        const rpe=document.getElementById(cat+"-rpe").value;
-        if(rpe!=="Duro"){
-            data.categories[cat].streak++;
-        }else{
-            data.categories[cat].streak=0;
-        }
-        if(data.categories[cat].streak>=2){
-            if(cat!=="core"){
-                if(data.categories[cat].reps<20){
-                    data.categories[cat].reps+=2;
-                }else{
-                    data.categories[cat].band+=10;
-                    data.categories[cat].reps=10;
-                }
-            }else{
-                data.categories[cat].reps+=5;
-            }
-            data.categories[cat].streak=0;
-        }
-    });
-    localStorage.setItem("workoutData",JSON.stringify(data));
-    renderCalendar();
-    alert("Salvato e progressione aggiornata");
+if(data.completedDate!==today()){
+if(data.lastDate===today()){
+data.streak++;
+}else{
+data.streak=1;
+}
+}
+data.completedDate=today();
+
+workouts[data.lastWorkout].forEach(cat=>{
+data.categories[cat].streak++;
+if(data.categories[cat].streak>=2){
+if(data.categories[cat].time<50){
+data.categories[cat].time+=5;
+}else{
+data.categories[cat].band+=10;
+data.categories[cat].time=40;
+}
+data.categories[cat].streak=0;
+}
+});
+
+localStorage.setItem("workoutV3",JSON.stringify(data));
+renderStatus();
+alert("Salvato e progressione aggiornata");
 }
 
-function renderCalendar(){
-    const cal=document.getElementById("calendar");
-    cal.innerHTML="";
-    for(let i=1;i<=100;i++){
-        const div=document.createElement("div");
-        div.className="day";
-        const inner=document.createElement("div");
-        if(data.sessions[i-1]){
-            inner.className="done";
-        }else{
-            inner.className="empty";
-        }
-        div.appendChild(inner);
-        cal.appendChild(div);
-    }
-}
-
-generateWorkoutIfNeeded();
-renderWorkout();
-renderCalendar();
+generateWorkout();
 
 </script>
-
 </body>
 </html>
