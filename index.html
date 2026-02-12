@@ -6,14 +6,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body{font-family:Arial;background:#111;color:#eee;padding:15px;text-align:center}
-button{padding:8px;margin:6px;background:#222;color:#eee;border:1px solid #444}
-select{background:#222;color:#eee;border:1px solid #444;padding:5px}
-.section{margin:15px 0;font-weight:bold}
-.exercise{border:1px solid #333;padding:8px;margin:6px 0;text-align:left}
+button{padding:8px;margin:6px;background:#222;color:#eee;border:1px solid #444;border-radius:8px}
+select{background:#222;color:#eee;border:1px solid #444;padding:6px;border-radius:8px}
+.section{margin:15px 0}
+.exercise{border:1px solid #333;padding:10px;margin:8px 0;border-radius:10px;text-align:left}
+.exercise b{display:block;margin-bottom:4px}
 a{color:#4da6ff;text-decoration:none}
-.small{font-size:12px;color:#aaa}
-.square{width:14px;height:14px;border:1px solid #444;display:inline-block;margin-right:5px}
-.done{background:#2a7a2a}
+small{color:#aaa}
+.pill{display:inline-block;padding:2px 8px;border:1px solid #444;border-radius:999px;margin:4px 6px 0 0;font-size:12px}
 </style>
 </head>
 <body>
@@ -24,310 +24,71 @@ a{color:#4da6ff;text-decoration:none}
 Allenamento: <span id="workoutType"></span>
 </div>
 
-<div>
-<select id="mode">
-<option value="25">25 minuti</option>
-<option value="35">35 minuti</option>
+<div style="margin-top:10px">
+<select id="mode" onchange="renderProgram();renderStatus();">
+  <option value="25">25 minuti</option>
+  <option value="35">35 minuti</option>
 </select>
 </div>
 
-<div>
-<span id="doneSquare" class="square"></span>
-🔥 Streak: <span id="streak">0</span>
+<div id="status" style="margin-top:10px"></div>
+
+<div id="program" style="margin-top:10px"></div>
+
+<div class="section">
+  <div id="phase" style="font-weight:bold"></div>
+  <div id="timeLeft"></div>
+  <button onclick="startPhase()">Start Fase</button>
+  <button onclick="nextPhase()">Fase Successiva</button>
 </div>
 
-<hr>
-
-<div id="program"></div>
-
-<hr>
-
-<div>
-<div><b id="phase">—</b></div>
-<div id="timeLeft"></div>
-<button onclick="startSession()">Start Sessione</button>
-<button onclick="nextPhase()">Fase Successiva</button>
-</div>
-
-<br>
 <button onclick="completeWorkout()">Allenamento completato</button>
 
 <script>
+// =====================================================
+// STORAGE / STATO
+// =====================================================
 
-/* ===========================
-   STORAGE
-=========================== */
+const STORAGE_KEY = "workoutV5";
 
-const STORE="workoutV6";
-
-let data=JSON.parse(localStorage.getItem(STORE))||{
-lastDate:null,
-lastWorkout:0,
-completedDate:null,
-streak:0,
-categories:{
-pull:{band:0,reps:12},
-push:{band:0,reps:12},
-posterior:{band:1,reps:12}
-}
+let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
+  startDate: new Date().toISOString().split("T")[0],
+  lastDate: null,
+  lastWorkout: 0,
+  streak: 0,
+  completedDate: null,
+  categories: {
+    pull: { bandLevel: 1, time: 40, streak: 0 },       // 0=Verde,1=Giallo,2=Arancio
+    push: { bandLevel: 1, time: 40, streak: 0 },
+    posterior: { bandLevel: 1, time: 40, streak: 0 }
+  }
 };
 
-function save(){localStorage.setItem(STORE,JSON.stringify(data));}
-function today(){return new Date().toISOString().split("T")[0];}
+const BAND_COLORS = ["Verde (leggero)", "Giallo (medio)", "Arancio (alto)"];
 
-/* ===========================
-   ROTAZIONE 1-2-3
-=========================== */
-
-const workouts={
-1:["pull","push","posterior"],
-2:["push","posterior","pull"],
-3:["posterior","pull","push"]
+// Rotazione giornaliera delle categorie
+const workouts = {
+  1: ["pull","push","posterior"],
+  2: ["push","posterior","pull"],
+  3: ["posterior","pull","push"]
 };
 
-function generateWorkout(){
-if(data.lastDate!==today()){
-data.lastWorkout=(data.lastWorkout%3)+1;
-data.lastDate=today();
-save();
-}
-document.getElementById("workoutType").innerText=data.lastWorkout;
-renderStatus();
-renderProgram();
-}
+// =====================================================
+// DATABASE ESERCIZI (con link diretto)
+// NOTE IMPORTANTI:
+// - Esercizi con banda: nessun punto di ancoraggio esterno (solo corpo + banda)
+// - Corpo libero: punti d’appoggio solo il corpo
+// =====================================================
 
-function renderStatus(){
-document.getElementById("streak").innerText=data.streak;
-if(data.completedDate===today()){
-document.getElementById("doneSquare").classList.add("done");
-}else{
-document.getElementById("doneSquare").classList.remove("done");
-}
-}
+const exerciseDB = {
 
-/* ===========================
-   DATABASE ESERCIZI
-=========================== */
-
-const exerciseDB={
-warm:["Jumping Jacks","High Knees","Shadow Boxing","Inchworm","Arm Circles"],
-mobility:["Thoracic Rotation","Hip CARs","Ankle Rock","Cat Cow","Deep Squat Hold"],
-core:["Plank","Dead Bug","Side Plank","Hollow Hold"],
-stretch:["Child Pose","Hip Flexor Stretch","Hamstring Stretch"],
-pull:["Band Row","Face Pull","Band Curl","Reverse Fly","Lat Pulldown Band"],
-push:["Push-up","Floor Press Band","Overhead Press Band","Diamond Push-up"],
-posterior:["Banded Deadlift","Glute Bridge","Good Morning Band","Single Leg RDL"]
-};
-
-/* ===========================
-   RANDOM STABILE + ANTI RIPETIZIONE
-=========================== */
-
-function mulberry32(a){return function(){var t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296;}}
-function seedFromDate(str){let n=0;for(let i=0;i<str.length;i++)n=(n*31+str.charCodeAt(i))>>>0;return n;}
-function pickExercises(cat,count){
-const rng=mulberry32(seedFromDate(today()+cat));
-let arr=exerciseDB[cat].slice();
-for(let i=arr.length-1;i>0;i--){
-const j=Math.floor(rng()*(i+1));
-[arr[i],arr[j]]=[arr[j],arr[i]];
-}
-return arr.slice(0,count);
-}
-
-/* ===========================
-   RENDER PROGRAMMA
-=========================== */
-
-function tutorialLink(name){
-return "https://www.youtube.com/results?search_query="+encodeURIComponent(name+" tutorial");
-}
-
-function renderProgram(){
-let container=document.getElementById("program");
-container.innerHTML="";
-
-let warm=pickExercises("warm",3);
-let mobility=pickExercises("mobility",2);
-let core=pickExercises("core",1);
-let stretch=pickExercises("stretch",1);
-
-container.innerHTML+="<div class='section'>Riscaldamento</div>";
-warm.forEach(e=>container.innerHTML+=exerciseHTML(e));
-
-container.innerHTML+="<div class='section'>Mobilità</div>";
-mobility.forEach(e=>container.innerHTML+=exerciseHTML(e));
-
-workouts[data.lastWorkout].forEach(cat=>{
-container.innerHTML+="<div class='section'>"+cat.toUpperCase()+"</div>";
-let list=pickExercises(cat,3);
-list.forEach((e,i)=>{
-container.innerHTML+=exerciseStrengthHTML(e,cat,i);
-});
-});
-
-container.innerHTML+="<div class='section'>Core</div>";
-core.forEach(e=>container.innerHTML+=exerciseHTML(e));
-
-container.innerHTML+="<div class='section'>Stretch</div>";
-stretch.forEach(e=>container.innerHTML+=exerciseHTML(e));
-}
-
-function exerciseHTML(name){
-return `<div class="exercise">
-<b>${name}</b>
-<div class="small"><a href="${tutorialLink(name)}" target="_blank">Apri tutorial</a></div>
-</div>`;
-}
-
-const bands=[15,25,35];
-
-function exerciseStrengthHTML(name,cat,i){
-let suggestedBand=bands[data.categories[cat].band];
-let suggestedReps=data.categories[cat].reps;
-return `<div class="exercise">
-<b>${name}</b>
-Banda:
-<select id="${cat}_band_${i}">
-<option value="0">15kg</option>
-<option value="1">25kg</option>
-<option value="2">35kg</option>
-</select>
-Reps:
-<select id="${cat}_reps_${i}">
-${[8,10,12,14,16,18,20].map(r=>`<option ${r===suggestedReps?"selected":""}>${r}</option>`).join("")}
-</select>
-RPE:
-<select id="${cat}_rpe_${i}">
-<option value="1">Facile</option>
-<option value="2" selected>Medio</option>
-<option value="3">Duro</option>
-</select>
-<div class="small">Target: ${suggestedBand}kg / ${suggestedReps} reps</div>
-<div class="small"><a href="${tutorialLink(name)}" target="_blank">Apri tutorial</a></div>
-</div>`;
-}
-
-/* ===========================
-   TIMER + METRONOMO
-=========================== */
-
-let phases=[];
-let current=0;
-let timer=null;
-let audioCtx=null;
-let gainNode=null;
-
-function initAudio(){
-audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-gainNode=audioCtx.createGain();
-gainNode.gain.value=0.01;
-gainNode.connect(audioCtx.destination);
-}
-
-function beep(){
-if(!audioCtx)initAudio();
-let osc=audioCtx.createOscillator();
-osc.frequency.value=500;
-osc.connect(gainNode);
-osc.start();
-osc.stop(audioCtx.currentTime+0.04);
-}
-
-function startSession(){
-buildPhases();
-current=0;
-runPhase();
-}
-
-function buildPhases(){
-let total=parseInt(document.getElementById("mode").value)*60;
-
-let warm=Math.round(total*0.03);
-let mobility=Math.round(total*0.02);
-let core=Math.round(total*0.02);
-let stretch=Math.max(Math.round(total*0.03),30);
-
-let exerciseTime=total-(warm+mobility+core+stretch);
-let block=Math.floor(exerciseTime/3);
-
-phases=[
-{name:"Riscaldamento",time:warm,metronome:true},
-{name:"Mobilità",time:mobility,metronome:false},
-{name:"Blocco 1",time:block,metronome:false},
-{name:"Pausa",time:30,metronome:false},
-{name:"Blocco 2",time:block,metronome:false},
-{name:"Pausa",time:30,metronome:false},
-{name:"Blocco 3",time:block,metronome:false},
-{name:"Core",time:core,metronome:false},
-{name:"Rilassamento 30s",time:30,metronome:true}
-];
-}
-
-function runPhase(){
-if(current>=phases.length){
-document.getElementById("phase").innerText="Sessione finita";
-return;
-}
-let phase=phases[current];
-let t=phase.time;
-document.getElementById("phase").innerText=phase.name;
-timer=setInterval(()=>{
-t--;
-document.getElementById("timeLeft").innerText=t+" sec";
-if(phase.metronome)beep();
-if(t<=0){
-clearInterval(timer);
-current++;
-runPhase();
-}
-},1000);
-}
-
-function nextPhase(){
-clearInterval(timer);
-current++;
-runPhase();
-}
-
-/* ===========================
-   PROGRESSIONE
-=========================== */
-
-function completeWorkout(){
-if(data.completedDate===today())return alert("Già completato oggi");
-
-data.streak++;
-data.completedDate=today();
-
-workouts[data.lastWorkout].forEach(cat=>{
-let repsAvg=0;
-let count=0;
-for(let i=0;i<3;i++){
-let reps=parseInt(document.getElementById(`${cat}_reps_${i}`).value);
-let rpe=parseInt(document.getElementById(`${cat}_rpe_${i}`).value);
-repsAvg+=reps;
-count++;
-if(rpe===1&&reps>=data.categories[cat].reps+4){
-data.categories[cat].reps=Math.min(20,data.categories[cat].reps+2);
-}
-if(rpe===3&&reps<data.categories[cat].reps){
-data.categories[cat].reps=Math.max(8,data.categories[cat].reps-2);
-}
-}
-});
-
-save();
-renderStatus();
-alert("Allenamento salvato");
-}
-
-/* ===========================
-   INIT
-=========================== */
-
-generateWorkout();
-
-</script>
-</body>
-</html>
+  // MOBILITÀ (prima)
+  mobility: [
+    {name:"Hip CARs", reps:"6 per lato", note:"lento, controllo totale", link:"https://www.youtube.com/results?search_query=Hip+CARs+mobility"},
+    {name:"90/90 Hip Switch", reps:"8 per lato", note:"senza slancio", link:"https://www.youtube.com/results?search_query=90+90+hip+switch"},
+    {name:"Thoracic Rotation (Quadrupedia)", reps:"8 per lato", note:"espira in rotazione", link:"https://www.youtube.com/results?search_query=thoracic+rotation+quadruped"},
+    {name:"Open Book", reps:"8 per lato", note:"movimento ampio", link:"https://www.youtube.com/results?search_query=open+book+thoracic+mobility"},
+    {name:"Ankle Rock / Knee to Wall", reps:"10 per lato", note:"tallone giù", link:"https://www.youtube.com/results?search_query=knee+to+wall+ankle+mobility"},
+    {name:"Cat-Cow", reps:"8-10", note:"segmenta la colonna", link:"https://www.youtube.com/results?search_query=cat+cow+exercise"},
+    {name:"World’s Greatest Stretch", reps:"4 per lato", note:"pausa 2 sec", link:"https://www.youtube.com/results?search_query=worlds+greatest+stretch"},
+    {name:"Shoulder CARs", reps:"5 per lato", note:"scapola co
