@@ -5,425 +5,494 @@
 <title>Workout 100</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:Arial;background:#111;color:#eee;padding:15px;text-align:center}
-button{padding:8px;margin:6px;background:#222;color:#eee;border:1px solid #444;border-radius:8px}
-select{background:#222;color:#eee;border:1px solid #444;padding:6px;border-radius:8px}
-.section{margin:15px 0}
-.exercise{border:1px solid #333;padding:10px;margin:8px 0;border-radius:10px;text-align:left}
-.exercise b{display:block;margin-bottom:4px}
-a{color:#4da6ff;text-decoration:none}
-small{color:#aaa}
-.pill{display:inline-block;padding:2px 8px;border:1px solid #444;border-radius:999px;margin:4px 6px 0 0;font-size:12px}
+  body{font-family:Arial;background:#111;color:#eee;padding:15px;text-align:center}
+  button{padding:8px;margin:6px;background:#222;color:#eee;border:1px solid #444}
+  select{background:#222;color:#eee;border:1px solid #444;padding:5px}
+  .section{margin:14px 0;font-weight:bold}
+  .exercise{border:1px solid #333;padding:10px;margin:7px 0;text-align:left}
+  a{color:#4da6ff;text-decoration:none}
+  .small{font-size:12px;color:#aaa}
+  .pill{display:inline-block;border:1px solid #333;padding:4px 8px;margin:4px;background:#151515}
+  .square{width:14px;height:14px;border:1px solid #444;display:inline-block;margin-right:6px;vertical-align:middle}
+  .done{background:#2a7a2a}
+  hr{border:0;border-top:1px solid #333;margin:12px 0}
 </style>
 </head>
 <body>
 
 <h2>Workout 100</h2>
 
+<div class="pill">Allenamento: <span id="workoutType"></span></div>
+
+<div class="pill">
+  <select id="mode">
+    <option value="25">25 minuti</option>
+    <option value="35">35 minuti</option>
+  </select>
+</div>
+
+<div style="margin-top:6px">
+  <span id="doneSquare" class="square"></span>
+  <span class="pill">Streak: <span id="streak">0</span></span>
+  <span class="pill">Oggi: <span id="todayStr">—</span></span>
+</div>
+
+<hr>
+
+<div id="program"></div>
+
+<hr>
+
 <div>
-Allenamento: <span id="workoutType"></span>
+  <div class="pill">Fase: <b id="phase">—</b></div>
+  <div class="pill">Tempo: <b id="timeLeft">—</b></div>
 </div>
 
 <div style="margin-top:10px">
-<select id="mode" onchange="renderProgram();renderStatus();">
-  <option value="25">25 minuti</option>
-  <option value="35">35 minuti</option>
-</select>
-</div>
-
-<div id="status" style="margin-top:10px"></div>
-
-<div id="program" style="margin-top:10px"></div>
-
-<div class="section">
-  <div id="phase" style="font-weight:bold"></div>
-  <div id="timeLeft"></div>
-  <button onclick="startPhase()">Start Fase</button>
+  <button onclick="startSession()">Start Sessione</button>
   <button onclick="nextPhase()">Fase Successiva</button>
 </div>
 
-<button onclick="completeWorkout()">Allenamento completato</button>
+<div style="margin-top:10px">
+  <button onclick="completeWorkout()">Allenamento completato</button>
+</div>
 
 <script>
-// =====================================================
-// STORAGE / STATO
-// =====================================================
+/* =========================================================
+   OBIETTIVO
+   - Tutto il corpo, priorità parte superiore
+   - Lower: stabilizzazione (posterior chain + caviglie) NON volume gambe
+   - Random stabile per oggi + anti-ripetizione
+   - Pattern blocchi random AB o ABC (stabile per oggi/categoria)
+   - Timer a fasi (percentuali) + metronomo (solo warm + 30s relax)
+   - Salvataggio SOLO su "Allenamento completato"
+========================================================= */
 
-const STORAGE_KEY = "workoutV5";
-
-let data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
-  startDate: new Date().toISOString().split("T")[0],
-  lastDate: null,
-  lastWorkout: 0,
-  streak: 0,
-  completedDate: null,
-  categories: {
-    pull: { bandLevel: 1, time: 40, streak: 0 },       // 0=Verde,1=Giallo,2=Arancio
-    push: { bandLevel: 1, time: 40, streak: 0 },
-    posterior: { bandLevel: 1, time: 40, streak: 0 }
+/* ===========================
+   STORAGE
+=========================== */
+const STORE="workoutV7";
+let data=JSON.parse(localStorage.getItem(STORE))||{
+  lastDate:null,
+  lastWorkout:0,
+  completedDate:null,
+  streak:0,
+  categories:{
+    pull:{band:0,reps:12},
+    push:{band:0,reps:12},
+    posterior:{band:1,reps:12} // leggermente più “stabile”/resistente
   }
 };
 
-const BAND_COLORS = ["Verde (leggero)", "Giallo (medio)", "Arancio (alto)"];
+function save(){localStorage.setItem(STORE,JSON.stringify(data));}
+function today(){return new Date().toISOString().split("T")[0];}
+document.getElementById("todayStr").innerText=today();
 
-// Rotazione giornaliera delle categorie
-const workouts = {
-  1: ["pull","push","posterior"],
-  2: ["push","posterior","pull"],
-  3: ["posterior","pull","push"]
+/* ===========================
+   ROTAZIONE 1-2-3 (stabile per giorno)
+=========================== */
+const workouts={
+  // priorità upper: pull & push sempre, posterior è stabilizzazione
+  1:["pull","push","posterior"],      // bilanciato
+  2:["pull","push","posterior"],      // stesso ordine: cambia pattern+esercizi, focus upper
+  3:["pull","push","posterior"]       // stesso: stabilità -> meno caos, più aderenza
 };
 
-// =====================================================
-// DATABASE ESERCIZI (con link diretto)
-// NOTE IMPORTANTI:
-// - Esercizi con banda: nessun punto di ancoraggio esterno (solo corpo + banda)
-// - Corpo libero: punti d’appoggio solo il corpo
-// =====================================================
+function generateWorkout(){
+  if(data.lastDate!==today()){
+    data.lastWorkout=(data.lastWorkout%3)+1;
+    data.lastDate=today();
+    save();
+  }
+  document.getElementById("workoutType").innerText=data.lastWorkout;
+  renderStatus();
+  renderProgram();
+}
 
-const exerciseDB = {
+/* ===========================
+   STATUS
+=========================== */
+function renderStatus(){
+  document.getElementById("streak").innerText=data.streak;
+  const sq=document.getElementById("doneSquare");
+  if(data.completedDate===today()) sq.classList.add("done");
+  else sq.classList.remove("done");
+}
 
-  // MOBILITÀ (prima)
-  mobility: [
-    {name:"Hip CARs", reps:"6 per lato", note:"lento, controllo totale", link:"https://www.youtube.com/results?search_query=Hip+CARs+mobility"},
-    {name:"90/90 Hip Switch", reps:"8 per lato", note:"senza slancio", link:"https://www.youtube.com/results?search_query=90+90+hip+switch"},
-    {name:"Thoracic Rotation (Quadrupedia)", reps:"8 per lato", note:"espira in rotazione", link:"https://www.youtube.com/results?search_query=thoracic+rotation+quadruped"},
-    {name:"Open Book", reps:"8 per lato", note:"movimento ampio", link:"https://www.youtube.com/results?search_query=open+book+thoracic+mobility"},
-    {name:"Ankle Rock / Knee to Wall", reps:"10 per lato", note:"tallone giù", link:"https://www.youtube.com/results?search_query=knee+to+wall+ankle+mobility"},
-    {name:"Cat-Cow", reps:"8-10", note:"segmenta la colonna", link:"https://www.youtube.com/results?search_query=cat+cow+exercise"},
-    {name:"World’s Greatest Stretch", reps:"4 per lato", note:"pausa 2 sec", link:"https://www.youtube.com/results?search_query=worlds+greatest+stretch"},
-    {name:"Shoulder CARs", reps:"5 per lato", note:"scapola controllata", link:"https://www.youtube.com/results?search_query=shoulder+CARs"}
+/* ===========================
+   DATABASE ESERCIZI (full-body con priorità upper + stabilizzazione)
+   - warm: 3
+   - mobility: 2
+   - coreMobility: 2 (stabilità)
+   - blocchi: pull/push/posterior (pattern AB o ABC)
+   - core: 1
+   - stretch: 1
+=========================== */
+const exerciseDB={
+  warm:[
+    "Jumping Jacks","High Knees","Butt Kicks","Shadow Boxing",
+    "Inchworm","Squat to Stand","Arm Circles","Scapular Push-up",
+    "Ankle Bounces","Side Shuffle"
+  ],
+  mobility:[
+    "Thoracic Rotation (quadruped)","Open Book","Thread the Needle","Cat-Cow",
+    "Hip CARs","90/90 Hip Switch","Deep Squat Hold (light)","Ankle Rock (knee to wall)",
+    "Wall Slides","Shoulder CARs"
+  ],
+  // core stabilità in mobilità: anti-rotazione / anti-estensione / controllo bacino
+  coreMobility:[
+    "Dead Bug (slow)","Bird Dog (slow)","Pallof Press (band)",
+    "Bear Hover (10-20s)","Side Plank Reach","Hollow Hold (short)",
+    "Glute Bridge Hold","Marching Glute Bridge (slow)"
+  ],
+  core:[
+    "Plank","Side Plank","Dead Bug","Pallof Press (band)","Hollow Hold","Bear Hold"
+  ],
+  stretch:[
+    "Child Pose","Hip Flexor Stretch","Hamstring Stretch","Pec Stretch (doorway)",
+    "Lat Stretch","Calf Stretch"
   ],
 
-  // RISCALDAMENTO (dopo)
-  warm: [
-    {name:"Jumping Jacks", reps:"40 sec", note:"ritmo costante", link:"https://www.youtube.com/results?search_query=jumping+jacks+proper+form"},
-    {name:"High Knees", reps:"30 sec", note:"intensità moderata", link:"https://www.youtube.com/results?search_query=high+knees+exercise"},
-    {name:"Butt Kicks", reps:"30 sec", note:"cadenza regolare", link:"https://www.youtube.com/results?search_query=butt+kicks+exercise"},
-    {name:"Mountain Climbers (lenti)", reps:"30 sec", note:"spalle stabili", link:"https://www.youtube.com/results?search_query=slow+mountain+climbers"},
-    {name:"Inchworm", reps:"5-6", note:"attiva core + posterior chain", link:"https://www.youtube.com/results?search_query=inchworm+exercise"},
-    {name:"Squat to Stand", reps:"6-8", note:"apri anche + caviglie", link:"https://www.youtube.com/results?search_query=squat+to+stand+mobility"},
-    {name:"Arm Circles", reps:"20 avanti + 20 indietro", note:"ampiezza progressiva", link:"https://www.youtube.com/results?search_query=arm+circles+exercise"}
+  // UPPER PULL (bande + bodyweight)
+  pull:[
+    "Band Row","Band High Row","Band Face Pull","Band Pull-Apart",
+    "Band Reverse Fly","Band Lat Pulldown (door anchor)","Band Curl",
+    "Isometric Row Hold (band)","Prone Y-T-W","Scapular Retraction (band)"
   ],
 
-  // CORE
-  core: [
-    {name:"Plank", reps:"30 sec", note:"glutei attivi, addome forte", link:"https://www.youtube.com/results?search_query=plank+proper+form"},
-    {name:"Dead Bug", reps:"10 per lato", note:"lombare neutra", link:"https://www.youtube.com/results?search_query=dead+bug+exercise"},
-    {name:"Side Plank", reps:"20 sec per lato", note:"allineamento", link:"https://www.youtube.com/results?search_query=side+plank+proper+form"},
-    {name:"Hollow Hold (base)", reps:"15-25 sec", note:"schiena a terra", link:"https://www.youtube.com/results?search_query=hollow+hold+exercise"},
-    {name:"Pallof Press (banda)", reps:"10 per lato", note:"banda attorno schiena o sotto piedi (no ancoraggio esterno)", band:true, link:"https://www.youtube.com/results?search_query=pallof+press+resistance+band+no+anchor"}
+  // UPPER PUSH
+  push:[
+    "Push-up","Incline Push-up","Diamond Push-up","Pike Push-up",
+    "Band Floor Press","Band Overhead Press","Band Triceps Extension",
+    "Close-Grip Push-up","Hand-Release Push-up","Shoulder External Rotation (band)"
   ],
 
-  // STRETCH (fine sessione)
-  stretch: [
-    {name:"Child Pose", reps:"40 sec", note:"respira lento", link:"https://www.youtube.com/results?search_query=child+pose+stretch"},
-    {name:"Hamstring Stretch", reps:"30 sec per lato", note:"senza molleggio", link:"https://www.youtube.com/results?search_query=hamstring+stretch"},
-    {name:"Hip Flexor Stretch", reps:"30 sec per lato", note:"bacino in retroversione", link:"https://www.youtube.com/results?search_query=hip+flexor+stretch"},
-    {name:"Chest Opener (doorway senza porta)", reps:"30 sec", note:"mani dietro schiena, apri petto", link:"https://www.youtube.com/results?search_query=chest+stretch+hands+behind+back"}
-  ],
-
-  // PULL (schiena/bicipiti) — con banda senza ancoraggi
-  pull: [
-    {name:"Band Row (banda sotto piedi)", reps:"12", note:"gomiti vicino al corpo", band:true, link:"https://www.youtube.com/results?search_query=resistance+band+row+under+feet"},
-    {name:"Single-Arm Band Row (banda sotto piede)", reps:"10 per lato", note:"stabile, no torsioni", band:true, link:"https://www.youtube.com/results?search_query=single+arm+band+row+under+foot"},
-    {name:"Face Pull (banda attorno schiena)", reps:"12", note:"gomiti larghi, scapole", band:true, link:"https://www.youtube.com/results?search_query=band+face+pull+no+anchor"},
-    {name:"Band Pull Apart", reps:"15", note:"spalle basse", band:true, link:"https://www.youtube.com/results?search_query=band+pull+apart+exercise"},
-    {name:"Reverse Fly (banda)", reps:"12", note:"controlla la chiusura", band:true, link:"https://www.youtube.com/results?search_query=band+reverse+fly+exercise"},
-    {name:"Banded Curl (banda sotto piedi)", reps:"12", note:"gomiti fermi", band:true, link:"https://www.youtube.com/results?search_query=resistance+band+bicep+curl+under+feet"}
-  ],
-
-  // PUSH (petto/spalle/tricipiti)
-  push: [
-    {name:"Push-up", reps:"10-15", note:"core forte, linea unica", link:"https://www.youtube.com/results?search_query=push+up+proper+form"},
-    {name:"Incline Push-up (mani su divano)", reps:"12-18", note:"riduci carico", link:"https://www.youtube.com/results?search_query=incline+push+up"},
-    {name:"Pike Push-up", reps:"6-10", note:"spalle, testa tra braccia", link:"https://www.youtube.com/results?search_query=pike+push+up+exercise"},
-    {name:"Diamond Push-up", reps:"6-12", note:"tricipiti", link:"https://www.youtube.com/results?search_query=diamond+push+up"},
-    {name:"Band Floor Press (banda attorno schiena)", reps:"12", note:"spingi controllato", band:true, link:"https://www.youtube.com/results?search_query=band+floor+press+no+anchor"},
-    {name:"Band Overhead Press (banda sotto piedi)", reps:"10-12", note:"glutei attivi", band:true, link:"https://www.youtube.com/results?search_query=band+overhead+press+under+feet"},
-    {name:"Band Triceps Extension (banda sotto piedi)", reps:"12", note:"gomiti fermi", band:true, link:"https://www.youtube.com/results?search_query=band+triceps+extension+under+feet"}
-  ],
-
-  // POSTERIOR (catena posteriore)
-  posterior: [
-    {name:"Glute Bridge", reps:"15", note:"pausa 1 sec in alto", link:"https://www.youtube.com/results?search_query=glute+bridge+proper+form"},
-    {name:"Single-Leg Glute Bridge", reps:"10 per lato", note:"bacino stabile", link:"https://www.youtube.com/results?search_query=single+leg+glute+bridge"},
-    {name:"Good Morning (banda sotto piedi)", reps:"12", note:"anca indietro, schiena neutra", band:true, link:"https://www.youtube.com/results?search_query=band+good+morning+under+feet"},
-    {name:"Banded RDL (banda sotto piedi)", reps:"10-12", note:"tensione continua", band:true, link:"https://www.youtube.com/results?search_query=band+romanian+deadlift+under+feet"},
-    {name:"Bodyweight RDL", reps:"12", note:"hinge puro", link:"https://www.youtube.com/results?search_query=bodyweight+RDL+hinge"},
-    {name:"Hamstring Walkout", reps:"8-10", note:"lento, controllo", link:"https://www.youtube.com/results?search_query=hamstring+walkout"}
+  // POSTERIOR / LOWER STABILIZATION (no “quad pump”, focus hinge/caviglia/gluteo)
+  posterior:[
+    "Banded RDL","Banded Deadlift","Good Morning (band)",
+    "Glute Bridge (band)","Single-Leg RDL (band/light)",
+    "Hamstring Walkout","Calf Raise (slow)","Single-Leg Calf Raise",
+    "Tibialis Raise","Monster Walk (miniloop)"
   ]
 };
 
-// =====================================================
-// RANDOM “STABILE PER OGGI” + ANTI-RIPETIZIONE
-// =====================================================
-
-function today(){ return new Date().toISOString().split("T")[0]; }
-
-function mulberry32(a){
-  return function(){
-    var t=a+=0x6D2B79F5;
-    t=Math.imul(t^t>>>15,t|1);
-    t^=t+Math.imul(t^t>>>7,t|61);
-    return ((t^t>>>14)>>>0)/4294967296;
-  }
+function tutorialLink(name){
+  return "https://www.youtube.com/results?search_query="+encodeURIComponent(name+" exercise tutorial");
 }
-function seedFromString(str){
-  let n=0;
-  for(let i=0;i<str.length;i++) n=(n*31 + str.charCodeAt(i))>>>0;
-  return n;
-}
-function histKey(cat){ return "hist_"+cat; }
 
-function pickExercises(cat, count){
-  const rng = mulberry32(seedFromString(today()+":"+cat));
-  const list = (exerciseDB[cat] || []).slice();
+/* ===========================
+   PATCH 1 — Random stabile + anti-ripetizione (ultimi 12 per categoria)
+=========================== */
+function mulberry32(a){return function(){var t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296;}}
+function seedFromDate(str){let n=0;for(let i=0;i<str.length;i++)n=(n*31+str.charCodeAt(i))>>>0;return n;}
+function getHistoryKey(cat){return "hist_"+cat;}
 
-  const hist = JSON.parse(localStorage.getItem(histKey(cat)) || "[]");
+function pickExercises(cat,count){
+  const rng = mulberry32(seedFromDate(today()+":"+cat));
+  const list = (exerciseDB[cat]||[]).slice();
 
-  let pool = list.filter(ex => !hist.includes(ex.name));
+  const histKey = getHistoryKey(cat);
+  const hist = JSON.parse(localStorage.getItem(histKey) || "[]");
+
+  let pool = list.filter(x=>!hist.includes(x));
   if(pool.length < count) pool = list;
 
   for(let i=pool.length-1;i>0;i--){
-    const j = Math.floor(rng()*(i+1));
+    const j=Math.floor(rng()*(i+1));
     [pool[i],pool[j]]=[pool[j],pool[i]];
   }
 
   const picked = pool.slice(0,count);
-  const newHist = [...picked.map(x=>x.name), ...hist].slice(0,12);
-  localStorage.setItem(histKey(cat), JSON.stringify(newHist));
-
+  const newHist = [...picked,...hist].slice(0,12);
+  localStorage.setItem(histKey, JSON.stringify(newHist));
   return picked;
 }
 
-// =====================================================
-// GENERAZIONE WORKOUT GIORNALIERO
-// =====================================================
-
-function generateWorkout(){
-  if(data.lastDate !== today()){
-    data.lastWorkout = (data.lastWorkout % 3) + 1;
-    data.lastDate = today();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }
-  document.getElementById("workoutType").innerText = data.lastWorkout;
-  renderProgram();
-  renderStatus();
+/* ===========================
+   Pattern blocco (stabile per oggi/categoria):
+   - AB: 2 esercizi -> alternanza ciclica ABAB...
+   - ABC: 3 esercizi -> giro A->B->C...
+=========================== */
+function pickPatternFor(cat){
+  const rng = mulberry32(seedFromDate(today()+":pattern:"+cat));
+  return (rng() < 0.55) ? "AB" : "ABC"; // leggermente più AB (più semplice/eseguibile)
 }
 
-// =====================================================
-// RENDER PROGRAMMA (MOBILITÀ PRIMA, RISCALDAMENTO DOPO)
-// =====================================================
+/* ===========================
+   UI CONTROLLI: banda/reps/RPE 3 livelli
+=========================== */
+const bands=[15,25,35];
+const repOpts=[8,10,12,14,16,18,20];
 
-function exerciseHTML(exObj, catData){
-  const link = exObj.link || ("https://www.youtube.com/results?search_query="+encodeURIComponent(exObj.name+" exercise tutorial"));
-
-  let pills = "";
-  if(exObj.band){
-    const level = (catData && typeof catData.bandLevel==="number") ? catData.bandLevel : 1;
-    pills += `<span class="pill">Banda: ${BAND_COLORS[level]}</span>`;
-    pills += `<span class="pill"><small>No ancoraggi esterni</small></span>`;
-  } else {
-    pills += `<span class="pill"><small>Corpo libero</small></span>`;
-  }
-  if(catData){
-    pills += `<span class="pill"><small>Tempo lavoro: ${catData.time} sec</small></span>`;
-  }
-
+function strengthRowHTML(cat,i,suggestedBand,suggestedReps){
   return `
-  <div class="exercise">
-    <b>${exObj.name}</b>
-    ${pills}<br><br>
-    Ripetizioni/Tempo: <b>${exObj.reps}</b><br>
-    <small>Note: ${exObj.note}</small><br><br>
-    <a href="${link}" target="_blank" rel="noopener">Apri tutorial</a>
+    <div class="small" style="margin-top:6px">
+      Banda:
+      <select id="${cat}_band_${i}">
+        <option value="0"${suggestedBand===15?' selected':''}>15kg</option>
+        <option value="1"${suggestedBand===25?' selected':''}>25kg</option>
+        <option value="2"${suggestedBand===35?' selected':''}>35kg</option>
+      </select>
+      Reps:
+      <select id="${cat}_reps_${i}">
+        ${repOpts.map(r=>`<option${r===suggestedReps?' selected':''}>${r}</option>`).join("")}
+      </select>
+      RPE:
+      <select id="${cat}_rpe_${i}">
+        <option value="1">Facile</option>
+        <option value="2" selected>Medio</option>
+        <option value="3">Duro</option>
+      </select>
+    </div>
+    <div class="small">Target: ${suggestedBand}kg / ${suggestedReps} reps</div>
+  `;
+}
+
+function exerciseHTML(name){
+  return `<div class="exercise">
+    <b>${name}</b>
+    <div class="small"><a href="${tutorialLink(name)}" target="_blank">Apri tutorial</a></div>
   </div>`;
 }
 
-function renderProgram(){
-  const mode = document.getElementById("mode").value;
-
-  // Quanti esercizi mostrare per sezione
-  const nMob = 2;
-  const nWarm = 2;
-  const nBlock = 2;
-  const nCore = 1;
-  const nStretch = 1;
-
-  const container = document.getElementById("program");
-  container.innerHTML = "";
-
-  // MOBILITÀ (prima)
-  container.innerHTML += "<div class='section'><b>Mobilità</b></div>";
-  pickExercises("mobility", nMob).forEach(ex => {
-    container.innerHTML += exerciseHTML(ex);
-  });
-
-  // RISCALDAMENTO (dopo)
-  container.innerHTML += "<div class='section'><b>Riscaldamento</b></div>";
-  pickExercises("warm", nWarm).forEach(ex => {
-    container.innerHTML += exerciseHTML(ex);
-  });
-
-  // BLOCCHI (pull/push/posterior)
-  workouts[data.lastWorkout].forEach(cat=>{
-    container.innerHTML += "<div class='section'><b>"+cat.toUpperCase()+"</b></div>";
-    pickExercises(cat, nBlock).forEach(ex=>{
-      container.innerHTML += exerciseHTML(ex, data.categories[cat]);
-    });
-  });
-
-  // CORE
-  container.innerHTML += "<div class='section'><b>Core</b></div>";
-  pickExercises("core", nCore).forEach(ex => {
-    container.innerHTML += exerciseHTML(ex, {bandLevel:1, time: (mode==="25"?40:50)});
-  });
-
-  // STRETCH
-  container.innerHTML += "<div class='section'><b>Stretch</b></div>";
-  pickExercises("stretch", nStretch).forEach(ex => {
-    container.innerHTML += exerciseHTML(ex);
-  });
+function strengthExerciseHTML(name,cat,i){
+  const suggestedBand=bands[data.categories[cat].band] || 15;
+  const suggestedReps=data.categories[cat].reps || 12;
+  return `<div class="exercise">
+    <b>${name}</b>
+    ${strengthRowHTML(cat,i,suggestedBand,suggestedReps)}
+    <div class="small"><a href="${tutorialLink(name)}" target="_blank">Apri tutorial</a></div>
+  </div>`;
 }
 
-// =====================================================
-// TIMER + METRONOMO (fasi invertite)
-// =====================================================
+/* ===========================
+   RENDER PROGRAMMA (full-body, upper priority, stabilizzazione)
+=========================== */
+function renderProgram(){
+  const container=document.getElementById("program");
+  container.innerHTML="";
 
-let phases = [];
-let currentPhaseIndex = 0;
-let timer;
-let audioCtx;
-let gainNode;
+  const warm = pickExercises("warm",3);
+  const mobility = pickExercises("mobility",2);
+  const coreMob = pickExercises("coreMobility",2);
+  const core = pickExercises("core",1);
+  const stretch = pickExercises("stretch",1);
+
+  container.innerHTML+=`<div class="section">Riscaldamento (3)</div>`;
+  warm.forEach(e=>container.innerHTML+=exerciseHTML(e));
+
+  container.innerHTML+=`<div class="section">Mobilità (2)</div>`;
+  mobility.forEach(e=>container.innerHTML+=exerciseHTML(e));
+
+  container.innerHTML+=`<div class="section">Core Stability (mobilità) (2)</div>`;
+  coreMob.forEach(e=>container.innerHTML+=exerciseHTML(e));
+
+  // blocchi: sempre pull + push + posterior, priorità upper
+  const cats = workouts[data.lastWorkout];
+  cats.forEach(cat=>{
+    const pattern = pickPatternFor(cat); // AB o ABC
+    const count = (pattern==="AB") ? 2 : 3;
+
+    container.innerHTML+=`<div class="section">${cat.toUpperCase()} (${count})</div>`;
+    container.innerHTML+=`<div class="small">Pattern blocco: <b>${pattern}</b> — alterna gli esercizi (ABAB...) o giro (ABC...).</div>`;
+
+    const list = pickExercises(cat,count);
+    list.forEach((e,i)=>container.innerHTML+=strengthExerciseHTML(e,cat,i));
+  });
+
+  container.innerHTML+=`<div class="section">Core / Controllo (1)</div>`;
+  core.forEach(e=>container.innerHTML+=exerciseHTML(e));
+
+  container.innerHTML+=`<div class="section">Stretch / Rilassamento (1)</div>`;
+  stretch.forEach(e=>container.innerHTML+=exerciseHTML(e));
+}
+
+/* ===========================
+   TIMER + METRONOMO
+   - Percentuali: warm 3%, mobility 2%, esercizi 94% (3 blocchi), core 2%, stretch 3%
+   - Metronomo: SOLO in warm + 30s rilassamento
+   - Pausa: solo tra blocchi (30s)
+   - Cambio esercizio: manuale (tu lo fai), qui cambia solo la fase
+=========================== */
+let phases=[];
+let current=0;
+let timer=null;
+
+let audioCtx=null;
+let gainNode=null;
 
 function initAudio(){
-  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-  gainNode = audioCtx.createGain();
-  gainNode.gain.value = 0.02;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  gainNode=audioCtx.createGain();
+  gainNode.gain.value=0.01; // bassissimo
   gainNode.connect(audioCtx.destination);
 }
+
 function beep(){
-  const osc = audioCtx.createOscillator();
-  osc.type = "sine";
-  osc.frequency.value = 800;
+  if(!audioCtx) initAudio();
+  const osc=audioCtx.createOscillator();
+  osc.type="sine";
+  osc.frequency.value=520;
   osc.connect(gainNode);
   osc.start();
-  osc.stop(audioCtx.currentTime + 0.05);
+  osc.stop(audioCtx.currentTime+0.04);
 }
 
 function buildPhases(){
-  const mode = document.getElementById("mode").value;
+  const total = parseInt(document.getElementById("mode").value,10)*60;
 
-  const warmTime = (mode==="25") ? 120 : 180;     // Riscaldamento totale
-  const mobilityTime = (mode==="25") ? 120 : 180; // Mobilità totale
-  const blockTime = (mode==="25") ? 300 : 420;
-  const coreTime = (mode==="25") ? 120 : 180;
-  const stretchTime = (mode==="25") ? 120 : 180;
+  let warmT = Math.round(total*0.03);
+  let mobT  = Math.round(total*0.02);
+  let coreT = Math.round(total*0.02);
+  let stretchT = Math.round(total*0.03);
 
-  phases = [];
-  currentPhaseIndex = 0;
+  // rilassamento beep fisso 30s
+  stretchT = Math.max(stretchT, 30);
 
-  // INVERTITO: Mobilità -> Riscaldamento
-  phases.push({name:"Mobilità", time: mobilityTime, metronome:false});
-  phases.push({name:"Riscaldamento", time: warmTime, metronome:true});
+  // esercizi = resto
+  let exT = total - (warmT + mobT + coreT + stretchT);
+  exT = Math.max(exT, 60);
 
-  workouts[data.lastWorkout].forEach(cat=>{
-    phases.push({name:"Blocco "+cat, time: blockTime, metronome:true, category:cat});
-  });
+  const block = Math.floor(exT/3);
 
-  phases.push({name:"Core", time: coreTime, metronome:true});
-  phases.push({name:"Stretch", time: stretchTime, metronome:false});
+  phases = [
+    {name:"Riscaldamento (metronomo 2–1–2)", time:warmT, metronome:true},
+    {name:"Mobilità", time:mobT, metronome:false},
+    {name:"Blocco 1 (Upper)", time:block, metronome:false},
+    {name:"Pausa", time:30, metronome:false},
+    {name:"Blocco 2 (Upper)", time:block, metronome:false},
+    {name:"Pausa", time:30, metronome:false},
+    {name:"Blocco 3 (Stabilizzazione)", time:block, metronome:false},
+    {name:"Core / Controllo", time:coreT, metronome:false},
+    {name:"Rilassamento 30s (metronomo)", time:30, metronome:true},
+  ];
+  // eventuale stretch residuo senza beep
+  const residual = stretchT - 30;
+  if(residual > 0) phases.push({name:"Stretch (senza metronomo)", time:residual, metronome:false});
 }
 
-function startPhase(){
-  if(!audioCtx) initAudio();
+function startSession(){
   buildPhases();
+  current=0;
   runPhase();
 }
 
 function runPhase(){
-  if(currentPhaseIndex >= phases.length){
-    clearInterval(timer);
-    document.getElementById("phase").innerText = "Sessione completata";
-    document.getElementById("timeLeft").innerText = "";
+  if(timer){clearInterval(timer); timer=null;}
+  if(current>=phases.length){
+    document.getElementById("phase").innerText="Sessione finita";
+    document.getElementById("timeLeft").innerText="—";
     return;
   }
-  const phase = phases[currentPhaseIndex];
-  let timeLeft = phase.time;
+  const phase=phases[current];
+  let t=phase.time;
 
-  document.getElementById("phase").innerText = phase.name;
-  document.getElementById("timeLeft").innerText = timeLeft+" sec";
+  document.getElementById("phase").innerText=phase.name;
+  document.getElementById("timeLeft").innerText=t+" sec";
 
-  clearInterval(timer);
-  timer = setInterval(()=>{
-    timeLeft--;
-    document.getElementById("timeLeft").innerText = timeLeft+" sec";
-
+  timer=setInterval(()=>{
+    t--;
+    document.getElementById("timeLeft").innerText=t+" sec";
     if(phase.metronome) beep();
-
-    if(timeLeft<=0){
+    if(t<=0){
       clearInterval(timer);
-      currentPhaseIndex++;
+      timer=null;
+      current++;
       runPhase();
     }
   },1000);
 }
 
 function nextPhase(){
-  clearInterval(timer);
-  currentPhaseIndex++;
+  if(timer){clearInterval(timer); timer=null;}
+  current++;
   runPhase();
 }
 
-// =====================================================
-// PROGRESSIONE (tempo + banda colore; NO kg)
-// - Dopo 2 completamenti del blocco categoria:
-//   aumenta tempo fino a 50 sec, poi aumenta colore banda (Verde->Giallo->Arancio)
-// =====================================================
-
+/* ===========================
+   PROGRESSIONE (priorità upper, posterior più conservativa)
+   - Solo se completato oggi (manuale)
+   - Input per categoria: media reps + RPE dei 2/3 esercizi del blocco
+   - Regole:
+     * RPE Facile (1) e reps >= target+4 -> target +2 (max 20)
+     * se target==20 e RPE Facile -> banda +1 (max 35) e reset reps 12
+     * RPE Duro (3) e reps < target -> target -2 (min 8)
+=========================== */
 function completeWorkout(){
-  if(data.completedDate !== today()){
-    data.streak++;
+  if(data.completedDate===today()){
+    alert("Già completato oggi.");
+    return;
   }
-  data.completedDate = today();
 
-  workouts[data.lastWorkout].forEach(cat=>{
-    const c = data.categories[cat];
-    c.streak++;
+  // streak coerente (solo consecutivi)
+  if(data.completedDate){
+    const prev=new Date(data.completedDate+"T00:00:00");
+    const cur=new Date(today()+"T00:00:00");
+    const diffDays=Math.round((cur-prev)/(1000*60*60*24));
+    data.streak = (diffDays===1) ? (data.streak+1) : 1;
+  }else{
+    data.streak=1;
+  }
+  data.completedDate=today();
 
-    if(c.streak >= 2){
-      if(c.time < 50){
-        c.time += 5;
-      } else {
-        // aumenta banda fino ad Arancio (2)
-        c.bandLevel = Math.min(2, c.bandLevel + 1);
-        c.time = 40;
-      }
-      c.streak = 0;
+  const cats = workouts[data.lastWorkout];
+
+  cats.forEach(cat=>{
+    // quante righe ci sono (AB=2, ABC=3) -> leggiamo fino a che esistono
+    let repsSum=0, rpeSum=0, n=0;
+
+    for(let i=0;i<3;i++){
+      const repsEl=document.getElementById(`${cat}_reps_${i}`);
+      const rpeEl=document.getElementById(`${cat}_rpe_${i}`);
+      if(!repsEl || !rpeEl) continue;
+
+      const reps=parseInt(repsEl.value,10);
+      const rpe=parseInt(rpeEl.value,10);
+      repsSum+=reps; rpeSum+=rpe; n++;
     }
+    if(n===0) return;
+
+    const avgReps=Math.round(repsSum/n);
+    const avgRpe=Math.round(rpeSum/n);
+
+    const st=data.categories[cat];
+    let target=st.reps;
+    let bandIdx=st.band;
+
+    if(avgRpe<=1 && avgReps>=target+4){
+      if(target<20){
+        target=Math.min(20,target+2);
+      }else{
+        if(bandIdx<2){
+          bandIdx=bandIdx+1; // 15->25->35
+          target=12;
+        }
+      }
+    }else if(avgRpe>=3 && avgReps<target){
+      target=Math.max(8,target-2);
+    }
+
+    // posterior: più conservativa (stabilizzazione)
+    if(cat==="posterior"){
+      // limita gli aumenti troppo rapidi
+      target = Math.min(target, 18);
+    }
+
+    st.reps=target;
+    st.band=bandIdx;
   });
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  save();
   renderStatus();
-  alert("Allenamento salvato e progressione aggiornata");
+  renderProgram();
+  alert("Allenamento salvato. Progressione aggiornata.");
 }
 
-function renderStatus(){
-  const done = (data.completedDate === today()) ? "✔ Oggi completato" : "";
-  const p = data.categories;
-  const status =
-    `${done}<br>🔥 Giorni consecutivi: ${data.streak}<br><br>`+
-    `<small>`+
-    `PULL: ${BAND_COLORS[p.pull.bandLevel]} | ${p.pull.time}s<br>`+
-    `PUSH: ${BAND_COLORS[p.push.bandLevel]} | ${p.push.time}s<br>`+
-    `POSTERIOR: ${BAND_COLORS[p.posterior.bandLevel]} | ${p.posterior.time}s`+
-    `</small>`;
-  document.getElementById("status").innerHTML = status;
-}
-
-// Avvio
+/* ===========================
+   INIT
+=========================== */
 generateWorkout();
-</script>
 
+</script>
 </body>
 </html>
