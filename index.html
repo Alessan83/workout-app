@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Workout 100</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body { font-family: Arial; background:#111; color:#eee; padding:10px; }
+button { padding:8px; margin:4px; background:#222; color:#eee; border:1px solid #444; }
+select,input { background:#222; color:#eee; border:1px solid #444; padding:5px; }
+.section { margin-top:20px; }
+.exercise { border:1px solid #333; padding:8px; margin:6px 0; }
+.small { font-size:12px; color:#aaa; }
+.calendar { display:grid; grid-template-columns:repeat(10,1fr); gap:2px; }
+.day { width:100%; padding-top:100%; position:relative; }
+.day div { position:absolute; top:0; bottom:0; left:0; right:0; font-size:10px; display:flex; align-items:center; justify-content:center; }
+.green { background:#064; }
+.blue { background:#036; }
+.gray { background:#333; }
+</style>
+</head>
+<body>
+
+<h2>Workout 100</h2>
+
+<div>
+Giorno: <span id="dayNumber"></span>/100
+</div>
+
+<div class="section">
+<label><input type="checkbox" id="runToggle"> Giorno corsa</label>
+<label><input type="checkbox" id="fastToggle"> Digiuno</label>
+<button onclick="generateWorkout()">Rigenera oggi</button>
+</div>
+
+<div id="workout" class="section"></div>
+
+<div class="section">
+<h3>Timer</h3>
+<input type="number" id="timerInput" value="60"> sec
+<button onclick="startTimer()">Start</button>
+<span id="timerDisplay"></span>
+</div>
+
+<div class="section">
+<button onclick="saveSession(25)">Salva 25'</button>
+<button onclick="saveSession(35)">Salva 35'</button>
+</div>
+
+<div class="section">
+<h3>Calendario</h3>
+<div id="calendar" class="calendar"></div>
+</div>
+
+<div class="section">
+<button onclick="exportData()">Export JSON</button>
+<input type="file" onchange="importData(event)">
+</div>
+
+<script>
+let data = JSON.parse(localStorage.getItem("workoutData")) || {
+    startDate: new Date().toISOString().split("T")[0],
+    sessions: [],
+    history: {}
+};
+
+const categories = {
+upperPull:["Band Row","High Row","Face Pull","Pull Apart"],
+upperPush:["Push-up","Push-up pausa","Floor Press","Pike Push-up"],
+posterior:["Deadlift","Good Morning","Glute Bridge"],
+core:["Plank","Dead Bug","Side Plank","Hollow Hold"],
+ankle:["Tibialis","Calf Eccentric","Balance"],
+metabolic:["Corda Intervalli","Corda Tecnica","Corda + Squat"]
+};
+
+function getDayNumber(){
+    const start = new Date(data.startDate);
+    const now = new Date();
+    return Math.min(100, Math.floor((now-start)/(1000*60*60*24))+1);
+}
+
+document.getElementById("dayNumber").innerText = getDayNumber();
+
+function randomFrom(arr,exclude){
+    let filtered = arr.filter(x=>x!==exclude);
+    return filtered[Math.floor(Math.random()*filtered.length)];
+}
+
+function generateWorkout(){
+    let last = data.sessions[data.sessions.length-1];
+    let exercises = [];
+    exercises.push(randomFrom(categories.upperPull,last?.upperPull));
+    exercises.push(randomFrom(categories.upperPush,last?.upperPush));
+    exercises.push(randomFrom(categories.posterior,last?.posterior));
+    exercises.push(randomFrom(categories.core,last?.core));
+    exercises.push(randomFrom(categories.ankle,last?.ankle));
+    exercises.push(randomFrom(categories.metabolic,last?.metabolic));
+
+    let container = document.getElementById("workout");
+    container.innerHTML = "";
+
+    exercises.forEach(ex=>{
+        let div = document.createElement("div");
+        div.className="exercise";
+        div.innerHTML = `
+        <b>${ex}</b><br>
+        Banda:
+        <button onclick="selectBand(this)">15</button>
+        <button onclick="selectBand(this)">25</button>
+        <button onclick="selectBand(this)">35</button>
+        <br>
+        Reps:
+        <select>
+        <option>8</option><option>10</option><option>12</option>
+        <option>14</option><option>16</option><option>18</option><option>20</option>
+        </select>
+        <br>
+        RPE: <input type="range" min="1" max="10">
+        `;
+        container.appendChild(div);
+    });
+
+    data.todayWorkout = exercises;
+    localStorage.setItem("workoutData",JSON.stringify(data));
+}
+
+function selectBand(btn){
+    let buttons = btn.parentElement.querySelectorAll("button");
+    buttons.forEach(b=>b.style.background="#222");
+    btn.style.background="#064";
+}
+
+function startTimer(){
+    let seconds = parseInt(document.getElementById("timerInput").value);
+    let display = document.getElementById("timerDisplay");
+    let interval = setInterval(()=>{
+        display.innerText = seconds;
+        seconds--;
+        if(seconds<0){ clearInterval(interval); display.innerText="Done"; }
+    },1000);
+}
+
+function saveSession(duration){
+    data.sessions.push({
+        date:new Date().toISOString().split("T")[0],
+        duration:duration
+    });
+    localStorage.setItem("workoutData",JSON.stringify(data));
+    renderCalendar();
+}
+
+function renderCalendar(){
+    let cal = document.getElementById("calendar");
+    cal.innerHTML="";
+    for(let i=1;i<=100;i++){
+        let div=document.createElement("div");
+        div.className="day";
+        let inner=document.createElement("div");
+        let session=data.sessions[i-1];
+        if(session){
+            inner.className=session.duration==35?"green":"blue";
+        }else{
+            inner.className="gray";
+        }
+        div.appendChild(inner);
+        cal.appendChild(div);
+    }
+}
+
+function exportData(){
+    let blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+    let a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="workout.json";
+    a.click();
+}
+
+function importData(event){
+    let file=event.target.files[0];
+    let reader=new FileReader();
+    reader.onload=function(e){
+        data=JSON.parse(e.target.result);
+        localStorage.setItem("workoutData",JSON.stringify(data));
+        location.reload();
+    }
+    reader.readAsText(file);
+}
+
+generateWorkout();
+renderCalendar();
+</script>
+
+</body>
+</html>
