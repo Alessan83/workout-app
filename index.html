@@ -3,20 +3,50 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Workout 100 (offline)</title>
+<title>Workout 100</title>
+
 <style>
-/* --- STILE ORIGINALE INVARIATO --- */
 :root{
---bg:#0f1115; --panel:#151924; --text:#e8e8e8; --muted:#a8b0c0; --line:#2a3142;
---accent:#4da6ff; --ok:#25d366; --warn:#f5c542; --danger:#ff5c5c;
+--bg:#0f1115; 
+--panel:#151924; 
+--text:#e8e8e8; 
+--muted:#a8b0c0; 
+--line:#2a3142;
+--accent:#4da6ff; 
+--ok:#25d366; 
+--warn:#f5c542; 
+--danger:#ff5c5c;
 }
-<script src="studyEngine.js"></script>   
-body{font-family:Arial,system-ui;background:var(--bg);color:var(--text);margin:0;padding:14px;}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;margin:10px auto;max-width:980px;}
-.exercise{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;background:#0b0d12;}
+
+body{
+font-family:Arial,system-ui;
+background:var(--bg);
+color:var(--text);
+margin:0;
+padding:14px;
+}
+
+.card{
+background:var(--panel);
+border:1px solid var(--line);
+border-radius:10px;
+padding:10px;
+margin:10px auto;
+max-width:980px;
+}
+
+.exercise{
+border:1px solid var(--line);
+border-radius:10px;
+padding:10px;
+margin:8px 0;
+background:#0b0d12;
+}
+
 button{cursor:pointer}
 .logBox{white-space:pre-wrap}
 </style>
+
 </head>
 <body>
 
@@ -48,8 +78,18 @@ RPE:
 <div class="logBox" id="logBox"></div>
 </div>
 
-<script>
+<!-- 🔹 QUI carichi il motore tecnico -->
+<script src="studyEngine.js"></script>
 
+<!-- 🔹 QUI va il tuo codice principale -->
+<script>
+let exerciseDB = null;
+
+// qui metti tutto il resto del tuo codice
+</script>
+
+</body>
+</html>
 /* ==========================
    DB
 ========================== */
