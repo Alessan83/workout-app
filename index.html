@@ -246,7 +246,6 @@ function fourWeekPhase(){ return currentWeekIndex() % 4; } // dato interno
   if(phase===3) repIndex = clamp(repIndex-1, 0, REPS_OPTIONS.length-2);
 
   return {band, reps: REPS_OPTIONS[repIndex], repIndex};
-}
 
 {
   let p = data.prog[family] || {band:15, repIndex:2};
