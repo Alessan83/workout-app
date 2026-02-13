@@ -45,12 +45,23 @@ body{
 
 button{cursor:pointer}
 .logBox{white-space:pre-wrap}
-.small{font-size:12px;color:var(--muted)}
-a{color:var(--accent);text-decoration:none}
+.small{color:var(--muted); font-size:12px}
+.sectionTitle{
+  margin:10px 0 6px;
+  font-weight:700;
+  color:var(--text);
+  letter-spacing:.2px;
+}
+hr.sep{
+  border:0;
+  border-top:1px solid var(--line);
+  margin:10px 0;
+}
+a{color:var(--accent); text-decoration:none}
 a:hover{text-decoration:underline}
 </style>
-
 </head>
+
 <body>
 
 <h1>Workout 100</h1>
@@ -71,6 +82,8 @@ a:hover{text-decoration:underline}
 
   <button id="regenBtn">Rigenera (oggi)</button>
   <button id="completeBtn">Allenamento completato</button>
+
+  <div class="small" id="statusLine" style="margin-top:8px"></div>
 </div>
 
 <div class="card">
@@ -81,15 +94,13 @@ a:hover{text-decoration:underline}
   <div class="logBox" id="logBox"></div>
 </div>
 
-<!-- 🔹 Motore tecnico opzionale -->
+<!-- Motore tecnico opzionale -->
 <script src="studyEngine.js"></script>
 
 <script>
-/* =========================================================
-   DB (exercises.json)
-   Atteso: esercizi.json con almeno { "training": [ {name, family, ...}, ... ] }
-   family consigliate: "upper" | "core" | "lower"
-========================================================= */
+/* ==========================
+   DB
+========================== */
 let exerciseDB = null;
 
 async function loadDB() {
@@ -99,7 +110,6 @@ async function loadDB() {
 
     exerciseDB = await res.json();
 
-    // Validazione minima
     if (!exerciseDB || !Array.isArray(exerciseDB.training)) {
       throw new Error("Struttura JSON errata: manca 'training' (array).");
     }
@@ -113,17 +123,17 @@ async function loadDB() {
     if (programDiv) {
       programDiv.innerHTML =
         "<b>Errore caricamento exercises.json</b><br><span class='small'>" +
-        (err && err.message ? err.message : String(err)) + "</span>";
+        (err && err.message ? err.message : String(err)) +
+        "</span>";
     }
   }
 }
 
-/* =========================================================
+/* ==========================
    STORAGE
-========================================================= */
-const STORAGE_KEY = "workout100_v10";
+========================== */
+const STORAGE_KEY = "workout100_v11";
 
-// fallback clone (iOS vecchi)
 function deepClone(obj){
   if (typeof structuredClone === "function") return structuredClone(obj);
   return JSON.parse(JSON.stringify(obj));
@@ -132,31 +142,31 @@ function deepClone(obj){
 const DEFAULT_DATA = {
   startDate: new Date().toISOString().split("T")[0],
 
-  // chiave per stabilità giornaliera (include mode + regen)
+  // stabilità giornaliera
   lastGeneratedKey: null,
-  dayPicks: null, // array di nomi (o indici) degli esercizi scelti oggi
+  dayPlan: null, // { warm:[names], mobility:[names], strength:[names] }
 
-  // rigenera nello stesso giorno senza perdere stabilità post-rigenera
+  // rigenera oggi
   regen: { date: null, n: 0 },
 
   completedDate: null,
   streak: 0,
 
-  // progressione per family
   prog: {
     upper: { band: 15, repIndex: 2 },
     core:  { band: 15, repIndex: 1 },
     lower: { band: 15, repIndex: 1 }
   },
 
-  // anti-ripetizione per family (ultimi 12 nomi)
+  // anti-ripetizione (ultimi 12 per bucket)
   history: {
+    warm: [],
+    mobility: [],
     upper: [],
     core: [],
     lower: []
   },
 
-  // sessioni salvate
   sessions: []
 };
 
@@ -167,7 +177,6 @@ function loadData() {
 
     const parsed = JSON.parse(raw);
 
-    // merge sicuro
     return {
       ...deepClone(DEFAULT_DATA),
       ...parsed,
@@ -182,7 +191,6 @@ function loadData() {
       },
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions : []
     };
-
   } catch (e) {
     console.warn("Errore lettura localStorage, reset dati:", e);
     return deepClone(DEFAULT_DATA);
@@ -199,46 +207,85 @@ function saveData() {
 
 let data = loadData();
 
-/* =========================================================
+/* ==========================
    UTILS
-========================================================= */
-const REPS_OPTIONS = [8,10,12,14,16,18,20];
-const BANDS = [15,25,35];
-const TEMPO = "2-1-2";
+========================== */
+const REPS_OPTIONS=[8,10,12,14,16,18,20];
+const BANDS=[15,25,35];
+const TEMPO="2-1-2";
 
-function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
-function today(){ return new Date().toISOString().split("T")[0]; }
-function daysBetween(d1,d2){ return Math.floor((new Date(d2)-new Date(d1)) / 86400000); }
+function clamp(n,min,max){return Math.max(min,Math.min(max,n));}
+function today(){return new Date().toISOString().split("T")[0];}
+function daysBetween(d1,d2){return Math.floor((new Date(d2)-new Date(d1))/86400000);}
 
 function mulberry32(a){
   return function(){
-    var t = a += 0x6D2B79F5;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    var t=a+=0x6D2B79F5;
+    t=Math.imul(t^t>>>15,t|1);
+    t^=t+Math.imul(t^t>>>7,t|61);
+    return ((t^t>>>14)>>>0)/4294967296;
   }
 }
 function seedFromString(str){
-  let n = 0;
-  for(let i=0;i<str.length;i++) n = (n*31 + str.charCodeAt(i)) >>> 0;
+  let n=0; for(let i=0;i<str.length;i++) n=(n*31 + str.charCodeAt(i))>>>0;
   return n;
 }
 
-// anti-ripetizione: evita ultimi 12 per family
-function getHist(fam){
-  return Array.isArray(data.history[fam]) ? data.history[fam] : [];
-}
-function setHist(fam, arr){
-  data.history[fam] = arr.slice(0,12);
+function uniq(arr){
+  const out=[];
+  const seen=new Set();
+  (arr||[]).forEach(x=>{
+    const s=String(x||"").trim();
+    if(!s) return;
+    if(seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
+  });
+  return out;
 }
 
-// selezione deterministica + anti-ripetizione
-function pickFromListStable(list, count, seedKey, fam){
+/* ==========================
+   NORMALIZZAZIONE ESERCIZI
+   Supporta:
+   - stringhe: "Band Row"
+   - oggetti: {name, family, cues, link}
+========================== */
+function normExercise(x, forcedFamily=null){
+  if (!x) return null;
+  if (typeof x === "string") {
+    return { name:x, family: forcedFamily || "core", cues: [], link: null };
+  }
+  if (typeof x === "object" && x.name) {
+    return {
+      name: String(x.name),
+      family: (forcedFamily || x.family || "core").toLowerCase(),
+      cues: Array.isArray(x.cues) ? x.cues.map(String) : (x.cues ? [String(x.cues)] : []),
+      link: x.link ? String(x.link) : null
+    };
+  }
+  return null;
+}
+
+function tutorialLink(ex){
+  const name = typeof ex === "string" ? ex : ex.name;
+  return "https://www.youtube.com/results?search_query=" + encodeURIComponent(name + " tutorial");
+}
+
+/* ==========================
+   HISTORY + PICK STABILE (anti-ripetizione)
+========================== */
+function getHist(bucket){
+  return Array.isArray(data.history[bucket]) ? data.history[bucket] : [];
+}
+function setHist(bucket, arr){
+  data.history[bucket] = arr.slice(0,12);
+}
+
+function pickStable(bucket, list, count, seedKey){
   const rng = mulberry32(seedFromString(seedKey));
-  const hist = getHist(fam);
+  const hist = getHist(bucket);
 
-  // preferisci quelli NON in history
-  let pool = list.filter(x => !hist.includes(x.name));
+  let pool = list.filter(ex => !hist.includes(ex.name));
   if (pool.length < count) pool = list.slice();
 
   // shuffle deterministico
@@ -250,17 +297,15 @@ function pickFromListStable(list, count, seedKey, fam){
   const picked = pool.slice(0, count);
 
   // aggiorna history
-  const newHist = [...picked.map(x=>x.name), ...hist].slice(0,12);
-  setHist(fam, newHist);
+  setHist(bucket, uniq([...picked.map(p=>p.name), ...hist]).slice(0,12));
 
   return picked;
 }
 
-/* =========================================================
+/* ==========================
    WORKOUT ENGINE (progressione)
-========================================================= */
+========================== */
 const WorkoutEngine = {
-
   getSuggested(data, family, mode) {
     const phase = Math.floor(daysBetween(data.startDate, today()) / 7) % 4;
     const p = data.prog[family] || { band: 15, repIndex: 2 };
@@ -274,20 +319,14 @@ const WorkoutEngine = {
 
     repIndex = clamp(repIndex, 0, REPS_OPTIONS.length - 1);
 
-    return {
-      band,
-      reps: REPS_OPTIONS[repIndex],
-      repIndex
-    };
+    return { band, reps: REPS_OPTIONS[repIndex], repIndex };
   },
 
   applyProgression(data, family, repsDone, repsTarget, rpe) {
-
     let p = data.prog[family] || { band: 15, repIndex: 2 };
     let bi = BANDS.indexOf(p.band);
     if (bi < 0) bi = 0;
 
-    // facile + target chiuso => alza reps, poi banda
     if (rpe === 1 && repsDone >= repsTarget) {
       if (p.repIndex < REPS_OPTIONS.length - 1) {
         p.repIndex++;
@@ -298,7 +337,6 @@ const WorkoutEngine = {
       }
     }
 
-    // duro + target fallito => scala
     if (rpe === 3 && repsDone < repsTarget) {
       if (p.repIndex > 0) {
         p.repIndex--;
@@ -313,10 +351,14 @@ const WorkoutEngine = {
   }
 };
 
-/* =========================================================
-   BUILD PROGRAM (stabile per oggi + rigenera oggi)
-========================================================= */
-let picks = []; // array di esercizi (oggetti) della sessione
+/* ==========================
+   BUILD PROGRAM (warm -> mobility -> strength)
+========================== */
+let plan = {
+  warm: [],
+  mobility: [],
+  strength: [] // contiene upper/core/lower
+};
 
 function getRegenNonceForToday(){
   if (data.regen.date !== today()) {
@@ -327,166 +369,254 @@ function getRegenNonceForToday(){
 }
 
 function regenToday(){
-  // incrementa nonce e forza nuova generazione per oggi
   if (data.regen.date !== today()) {
     data.regen.date = today();
     data.regen.n = 0;
   } else {
     data.regen.n = (data.regen.n || 0) + 1;
   }
-
   data.lastGeneratedKey = null;
-  data.dayPicks = null;
+  data.dayPlan = null;
   saveData();
   buildProgram();
 }
 
 function buildProgram() {
+  const programDiv = document.getElementById("program");
   if (!exerciseDB || !Array.isArray(exerciseDB.training)) {
     console.error("exerciseDB non caricato o struttura errata");
+    if (programDiv) programDiv.innerHTML = "<b>DB non pronto</b>";
     return;
   }
 
   const mode = document.getElementById("mode").value;
   const nonce = getRegenNonceForToday();
-
-  // target esercizi (puoi cambiare qui)
-  // 25 -> 10 esercizi, 35 -> 12 esercizi (focus upper)
-  const targetCount = mode === "35" ? 12 : 10;
-
-  // distribuzione
-  const upperCount = mode === "35" ? 8 : 6;
-  const coreCount  = 2;
-  const lowerCount = targetCount - upperCount - coreCount; // 2
-
   const key = `${today()}|${mode}|${nonce}`;
-  const currentKey = key;
 
-  // se già generato oggi con questa key => ricostruisci
-  if (data.lastGeneratedKey === currentKey && Array.isArray(data.dayPicks) && data.dayPicks.length > 0) {
-    // ricostruisci picks da nomi
-    const byName = new Map(exerciseDB.training.map(ex => [ex.name, ex]));
-    picks = data.dayPicks.map(n => byName.get(n)).filter(Boolean);
-    // se mismatch, rigenera
-    if (picks.length >= Math.min(5, targetCount)) {
-      renderProgram();
-      return;
-    }
+  // Conteggi: 25 => 10-11 esercizi (2 warm, 2 mob, 6 strength)
+  //          35 => 12-13 esercizi (3 warm, 2 mob, 8 strength)
+  const warmCount = (mode === "35") ? 3 : 2;
+  const mobCount  = 2;
+
+  const strengthTotal = (mode === "35") ? 8 : 6;
+  const upperCount = (mode === "35") ? 5 : 4;
+  const coreCount  = (mode === "35") ? 2 : 1;
+  const lowerCount = Math.max(1, strengthTotal - upperCount - coreCount); // 1 (stabilizzazione)
+
+  // Se già generato oggi con key => ricostruisci per stabilità
+  if (data.lastGeneratedKey === key && data.dayPlan && data.dayPlan.warm && data.dayPlan.strength) {
+    const allTrain = exerciseDB.training.map(x=>normExercise(x)).filter(Boolean);
+    const byNameT = new Map(allTrain.map(ex=>[ex.name, ex]));
+
+    const warmSrc = (Array.isArray(exerciseDB.warm) ? exerciseDB.warm : []).map(x=>normExercise(x,"warm")).filter(Boolean);
+    const mobSrc  = (Array.isArray(exerciseDB.mobility) ? exerciseDB.mobility : []).map(x=>normExercise(x,"mobility")).filter(Boolean);
+    const byNameW = new Map(warmSrc.map(ex=>[ex.name, ex]));
+    const byNameM = new Map(mobSrc.map(ex=>[ex.name, ex]));
+
+    plan.warm = (data.dayPlan.warm || []).map(n => byNameW.get(n) || normExercise(n,"warm")).filter(Boolean);
+    plan.mobility = (data.dayPlan.mobility || []).map(n => byNameM.get(n) || normExercise(n,"mobility")).filter(Boolean);
+    plan.strength = (data.dayPlan.strength || []).map(n => byNameT.get(n)).filter(Boolean);
+
+    renderProgram();
+    return;
   }
 
-  // genera nuovo set deterministico + anti ripetizione
-  const all = exerciseDB.training.slice().map(ex => ({
-    ...ex,
-    family: (ex.family || "core").toLowerCase()
-  }));
+  // Sorgenti warm/mobility: se non presenti nel JSON, fallback a training filtrando per family warm/mobility (se esistono)
+  const trainAll = exerciseDB.training.map(x=>normExercise(x)).filter(Boolean);
 
-  const upperList = all.filter(ex => ex.family === "upper");
-  const coreList  = all.filter(ex => ex.family === "core");
-  const lowerList = all.filter(ex => ex.family === "lower");
+  const warmList = (Array.isArray(exerciseDB.warm) ? exerciseDB.warm : [])
+    .map(x=>normExercise(x,"warm")).filter(Boolean);
 
-  // seedKey per family (stabile nel giorno + mode + nonce)
-  const pickedUpper = pickFromListStable(upperList, upperCount, currentKey + ":upper", "upper");
-  const pickedCore  = pickFromListStable(coreList,  coreCount,  currentKey + ":core",  "core");
-  const pickedLower = pickFromListStable(lowerList, lowerCount, currentKey + ":lower", "lower");
+  const mobList = (Array.isArray(exerciseDB.mobility) ? exerciseDB.mobility : [])
+    .map(x=>normExercise(x,"mobility")).filter(Boolean);
 
-  picks = [...pickedUpper, ...pickedCore, ...pickedLower];
+  const warmFallback = trainAll.filter(ex => ex.family === "warm");
+  const mobFallback  = trainAll.filter(ex => ex.family === "mobility");
 
-  // shuffle leggero deterministico per non avere tutti upper insieme
-  const rng = mulberry32(seedFromString(currentKey + ":mix"));
-  for(let i=picks.length-1;i>0;i--){
+  const warmSrc = warmList.length ? warmList : (warmFallback.length ? warmFallback : [
+    normExercise("Jumping Jacks","warm"),
+    normExercise("High Knees","warm"),
+    normExercise("Arm Circles","warm"),
+    normExercise("Inchworm","warm")
+  ]);
+
+  const mobSrc = mobList.length ? mobList : (mobFallback.length ? mobFallback : [
+    normExercise("Cat-Cow","mobility"),
+    normExercise("Thoracic Rotation (quadruped)","mobility"),
+    normExercise("Ankle Rock (knee to wall)","mobility"),
+    normExercise("90/90 Hip Switch","mobility")
+  ]);
+
+  // Strength families: upper/core/lower
+  const upperList = trainAll.filter(ex => ex.family === "upper");
+  const coreList  = trainAll.filter(ex => ex.family === "core");
+  const lowerList = trainAll.filter(ex => ex.family === "lower");
+
+  // pick deterministico + anti-ripetizione per bucket
+  plan.warm = pickStable("warm", warmSrc, warmCount, key + ":warm");
+  plan.mobility = pickStable("mobility", mobSrc, mobCount, key + ":mob");
+
+  const pickedUpper = pickStable("upper", upperList, upperCount, key + ":upper");
+  const pickedCore  = pickStable("core",  coreList,  coreCount,  key + ":core");
+  const pickedLower = pickStable("lower", lowerList, lowerCount, key + ":lower");
+
+  plan.strength = [...pickedUpper, ...pickedCore, ...pickedLower];
+
+  // shuffle leggero per non accorpare troppo
+  const rng = mulberry32(seedFromString(key + ":mix"));
+  for(let i=plan.strength.length-1;i>0;i--){
     const j = Math.floor(rng()*(i+1));
-    [picks[i], picks[j]] = [picks[j], picks[i]];
+    [plan.strength[i], plan.strength[j]] = [plan.strength[j], plan.strength[i]];
   }
 
-  data.lastGeneratedKey = currentKey;
-  data.dayPicks = picks.map(ex => ex.name);
+  data.lastGeneratedKey = key;
+  data.dayPlan = {
+    warm: plan.warm.map(ex=>ex.name),
+    mobility: plan.mobility.map(ex=>ex.name),
+    strength: plan.strength.map(ex=>ex.name)
+  };
   saveData();
 
   renderProgram();
 }
 
-/* =========================================================
-   RENDER
-========================================================= */
-function renderProgram() {
+/* ==========================
+   ATTENZIONI (cues) + StudyEngine
+========================== */
+function cuesFallbackByFamily(fam){
+  if (fam === "upper") return ["Scapole stabili", "Collo neutro", "Ribs down (non iperestendere)"];
+  if (fam === "core")  return ["Addome contratto", "Respiro controllato", "Bacino neutro"];
+  if (fam === "lower") return ["Schiena neutra", "Ginocchia in linea", "Spinta da anche/glutei"];
+  if (fam === "warm") return ["Ritmo fluido", "Respira naso/bocca", "Range comodo"];
+  if (fam === "mobility") return ["Movimento lento", "Nessun dolore acuto", "Controllo articolare"];
+  return ["Tecnica prima del volume"];
+}
 
+function extractStudyCues(analysis){
+  if (!analysis) return [];
+  // prova diversi campi senza rompere nulla
+  const candidates = [];
+  if (Array.isArray(analysis.cues)) candidates.push(...analysis.cues);
+  if (Array.isArray(analysis.attentions)) candidates.push(...analysis.attentions);
+  if (Array.isArray(analysis.attenzioni)) candidates.push(...analysis.attenzioni);
+  if (typeof analysis.cues === "string") candidates.push(analysis.cues);
+  if (typeof analysis.attentions === "string") candidates.push(analysis.attentions);
+  if (typeof analysis.attenzioni === "string") candidates.push(analysis.attenzioni);
+  if (typeof analysis.notes === "string") candidates.push(analysis.notes);
+  return candidates.map(String);
+}
+
+/* ==========================
+   RENDER PROGRAM
+========================== */
+function renderProgram() {
   const container = document.getElementById("program");
   container.innerHTML = "";
 
-  if (!picks || picks.length === 0) {
-    container.innerHTML = "<b>Nessun esercizio disponibile</b>";
-    return;
-  }
-
   const mode = document.getElementById("mode").value;
 
-  picks.forEach((ex, idx) => {
+  // Header sintetico
+  container.innerHTML += `
+    <div class="small">
+      Tempo: <b>${TEMPO}</b> — Struttura: Warm-up → Mobilità → Forza
+    </div>
+    <hr class="sep">
+  `;
 
-    const fam = (ex.family || "core").toLowerCase();
-    const sug = WorkoutEngine.getSuggested(data, fam, mode);
-
-    // Analisi tecnica (se presente)
-    let analysis = null;
-    if (typeof StudyEngine !== "undefined" && StudyEngine.analyzeExercise) {
-      try { analysis = StudyEngine.analyzeExercise(ex); } catch(e){ /* ignore */ }
-    }
-
-    const yt = ex.link || ("https://www.youtube.com/results?search_query=" + encodeURIComponent(ex.name + " exercise tutorial"));
-
-    container.innerHTML += `
-      <div class="exercise">
-        <b>${ex.name}</b><br>
-
-        ${analysis ? `
-          <span class="small">
-            Pattern: ${analysis.pattern}<br>
-            Carico rachide: ${analysis.spinalLoad}<br>
-            Evidenza: ${analysis.evidenceTag}<br>
-          </span>
-        ` : `<span class="small">Tempo: ${TEMPO}</span><br>`}
-
-        <span class="small">Family: ${fam}</span><br><br>
-
-        Banda: <b>${sug.band}</b> kg<br>
-        Target reps: <b>${sug.reps}</b><br>
-
-        <select class="didReps">
-          ${REPS_OPTIONS.map(r => `<option ${r === sug.reps ? "selected" : ""}>${r}</option>`).join("")}
-        </select>
-
-        <div class="small" style="margin-top:8px">
-          <a href="${yt}" target="_blank" rel="noopener">Tutorial</a>
-        </div>
-      </div>
-    `;
+  // Warm-up
+  container.innerHTML += `<div class="sectionTitle">Riscaldamento (${plan.warm.length})</div>`;
+  plan.warm.forEach(ex=>{
+    container.innerHTML += renderExerciseCard(ex, mode, true, false);
   });
 
+  // Mobilità
+  container.innerHTML += `<div class="sectionTitle">Mobilità (${plan.mobility.length})</div>`;
+  plan.mobility.forEach(ex=>{
+    container.innerHTML += renderExerciseCard(ex, mode, true, false);
+  });
+
+  // Forza
+  container.innerHTML += `<div class="sectionTitle">Forza (${plan.strength.length})</div>`;
+  plan.strength.forEach((ex, idx)=>{
+    container.innerHTML += renderExerciseCard(ex, mode, false, true, idx);
+  });
 }
 
-/* =========================================================
-   COMPLETE
-========================================================= */
-function completeWorkout(){
+function renderExerciseCard(ex, mode, isWarmOrMob=false, isStrength=false, strengthIndex=null){
+  const fam = (ex.family || "core").toLowerCase();
+  const sug = WorkoutEngine.getSuggested(data, fam, mode);
+  const yt = ex.link || tutorialLink(ex);
 
-  if (!picks || picks.length === 0) {
-    alert("Nessun esercizio da salvare.");
+  // StudyEngine (se presente)
+  let analysis = null;
+  if (typeof StudyEngine !== "undefined" && StudyEngine.analyzeExercise) {
+    try { analysis = StudyEngine.analyzeExercise(ex); } catch(e){ analysis = null; }
+  }
+
+  // cues: ex.cues + study + fallback
+  const cues = uniq([
+    ...(Array.isArray(ex.cues) ? ex.cues : []),
+    ...extractStudyCues(analysis),
+    ...cuesFallbackByFamily(fam)
+  ]).slice(0, 5);
+
+  const cuesHTML = cues.length
+    ? `<div class="small"><b>Attenzioni:</b> ${cues.join(" • ")}</div>`
+    : "";
+
+  const analysisHTML = analysis ? `
+    <div class="small">
+      ${analysis.pattern ? `Pattern: ${analysis.pattern}<br>` : ``}
+      ${analysis.spinalLoad ? `Carico rachide: ${analysis.spinalLoad}<br>` : ``}
+      ${analysis.evidenceTag ? `Evidenza: ${analysis.evidenceTag}<br>` : ``}
+    </div>
+  ` : "";
+
+  // per forza: dropdown reps fatto + target
+  let strengthControls = "";
+  if (isStrength) {
+    strengthControls = `
+      <div style="margin-top:8px">
+        <div class="small">Banda: <b>${sug.band}</b> kg — Target reps: <b>${sug.reps}</b></div>
+        <select class="didReps" data-strength-index="${strengthIndex}">
+          ${REPS_OPTIONS.map(r => `<option ${r === sug.reps ? "selected" : ""}>${r}</option>`).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="exercise" data-kind="${isStrength ? "strength" : "aux"}" ${isStrength ? `data-family="${fam}"` : ""}>
+      <b>${ex.name}</b><br>
+      <span class="small">Family: ${fam}</span><br><br>
+      ${analysisHTML}
+      ${cuesHTML}
+      ${strengthControls}
+      <div class="small" style="margin-top:8px">
+        <a href="${yt}" target="_blank" rel="noopener">Tutorial</a>
+      </div>
+    </div>
+  `;
+}
+
+/* ==========================
+   COMPLETE (salva solo forza)
+========================== */
+function completeWorkout(){
+  if (!plan || !plan.strength || plan.strength.length === 0) {
+    alert("Nessun esercizio forza da salvare.");
     return;
   }
 
   const mode = document.getElementById("mode").value;
   const rpe = parseInt(document.getElementById("rpeGlobal").value, 10);
+  if (isNaN(rpe)) { alert("RPE non valido."); return; }
 
-  if (isNaN(rpe)) {
-    alert("RPE non valido.");
-    return;
-  }
-
-  const exEls = document.querySelectorAll(".exercise");
+  const strengthEls = document.querySelectorAll(".exercise[data-kind='strength']");
   const sessionExercises = [];
 
-  exEls.forEach((el, i) => {
-
-    const ex = picks[i];
+  strengthEls.forEach((el, i) => {
+    const ex = plan.strength[i];
     if (!ex) return;
 
     const select = el.querySelector(".didReps");
@@ -505,25 +635,44 @@ function completeWorkout(){
       repsDone,
       band: sug.band
     });
-
   });
 
   data.sessions.push({
     date: today(),
     mode,
     rpe,
+    warm: plan.warm.map(x=>x.name),
+    mobility: plan.mobility.map(x=>x.name),
     exercises: sessionExercises
   });
 
+  // streak (minimale): se completa oggi
+  const t = today();
+  if (data.completedDate) {
+    const diff = daysBetween(data.completedDate, t);
+    data.streak = (diff === 1) ? (data.streak + 1) : 1;
+  } else {
+    data.streak = 1;
+  }
+  data.completedDate = t;
+
   saveData();
   updateLog();
+  updateStatusLine();
 
   alert("Allenamento salvato.");
 }
 
-/* =========================================================
-   LOG
-========================================================= */
+/* ==========================
+   STATUS + LOG
+========================== */
+function updateStatusLine(){
+  const el = document.getElementById("statusLine");
+  const done = (data.completedDate === today());
+  const streak = data.streak || 0;
+  el.innerHTML = `Oggi: <b>${today()}</b> — Completato: <b style="color:${done ? "var(--ok)" : "var(--warn)"}">${done ? "SÌ" : "NO"}</b> — Streak: <b>${streak}</b>`;
+}
+
 function updateLog(){
   const box = document.getElementById("logBox");
   if (!box) return;
@@ -537,9 +686,9 @@ function updateLog(){
   box.innerText = JSON.stringify(last, null, 2);
 }
 
-/* =========================================================
+/* ==========================
    BOOT
-========================================================= */
+========================== */
 function boot() {
   const regenBtn = document.getElementById("regenBtn");
   const completeBtn = document.getElementById("completeBtn");
@@ -547,17 +696,14 @@ function boot() {
 
   if (regenBtn) regenBtn.addEventListener("click", regenToday);
   if (completeBtn) completeBtn.addEventListener("click", completeWorkout);
-  if (modeSel) modeSel.addEventListener("change", () => {
-    // cambia mode => cambia key => nuovo programma stabile per quel mode
-    buildProgram();
-  });
+  if (modeSel) modeSel.addEventListener("change", buildProgram);
 
+  updateStatusLine();
   updateLog();
   buildProgram();
 }
 
 document.addEventListener("DOMContentLoaded", loadDB);
 </script>
-
 </body>
 </html>
