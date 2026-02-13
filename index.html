@@ -71,7 +71,7 @@ a:hover{text-decoration:underline}
   font-size:12px;
   color:var(--muted);
 }
-select, button{
+select, button, input{
   border:1px solid var(--line);
   background:#0b0d12;
   color:var(--text);
@@ -100,20 +100,70 @@ button{
   margin:10px 0;
 }
 
-.cues{
-  margin-top:6px;
-  padding-top:6px;
-  border-top:1px dashed rgba(255,255,255,.08);
+/* ===== NEW UI PIECES (no style overhaul) ===== */
+.exerciseHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
 }
 
+.toolBtn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:44px;
+  height:44px;
+  font-size:22px;
+  font-weight:700;
+  border-radius:10px;
+  border:1px solid var(--line);
+  background:#0b0d12;
+  color:var(--accent);
+  flex:0 0 auto;
+}
+
+.cuesList{
+  margin:8px 0 0;
+  padding-left:18px;
+}
+.cuesList li{
+  margin:4px 0;
+  color:var(--text);
+  font-size:13px;
+  line-height:1.3;
+}
+
+.searchRow{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+.searchRow input{
+  flex:1 1 240px;
+}
+.toggleRow{
+  margin-top:10px;
+}
+.toggleRow label{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  font-size:13px;
+  color:var(--muted);
+}
+
+/* Phone comfort */
 @media (max-width:560px){
   body{padding:10px}
   h1{font-size:20px;margin:6px 0 10px}
   .card{padding:10px;margin:8px auto}
   .controlsGrid{flex-direction:column;align-items:stretch}
   .actions{flex-direction:column}
-  select, button{width:100%; font-size:16px; padding:12px}
+  select, button, input{width:100%; font-size:16px; padding:12px}
   .exercise{padding:12px}
+  .toolBtn{width:52px;height:52px;font-size:26px}
 }
 </style>
 
@@ -141,10 +191,30 @@ button{
       </select>
     </div>
 
+    <div class="field">
+      <label>Banda base (SessionEngine)</label>
+      <select id="bandBase">
+        <option value="15">15</option>
+        <option value="25" selected>25</option>
+        <option value="35">35</option>
+      </select>
+    </div>
+
     <div class="actions" style="margin-left:auto">
       <button id="regenBtn">Rigenera (oggi)</button>
       <button id="completeBtn">Allenamento completato</button>
     </div>
+  </div>
+
+  <div class="toggleRow">
+    <label><input type="checkbox" id="runDay" /> Giorno corsa/bici (riduci gambe)</label>
+    <label><input type="checkbox" id="fasting" /> Digiuno (riduci volume)</label>
+    <label><input type="checkbox" id="noAnchor" checked /> Solo esercizi senza appigli/ancoraggi</label>
+  </div>
+
+  <div class="searchRow">
+    <input id="ytQuery" placeholder="Cerca su YouTube (es. band row sotto piedi)" />
+    <button id="ytBtn">Cerca</button>
   </div>
 
   <div class="small" id="statusLine" style="margin-top:8px"></div>
@@ -158,9 +228,10 @@ button{
   <div class="logBox" id="logBox"></div>
 </div>
 
-<!-- Motore tecnico (opzionale) -->
+<!-- Motori -->
 <script src="studyEngine.js"></script>
 <script src="biomechanicalEngine.js"></script>
+<script src="sessionengine1.js"></script>
 
 <script>
 /* ==========================
@@ -174,7 +245,6 @@ async function loadDB() {
     if (!res.ok) throw new Error("HTTP " + res.status);
 
     exerciseDB = await res.json();
-
     if (!exerciseDB || !Array.isArray(exerciseDB.training)) {
       throw new Error("Struttura JSON errata: manca 'training' (array).");
     }
@@ -196,7 +266,7 @@ async function loadDB() {
 /* ==========================
    STORAGE
 ========================== */
-const STORAGE_KEY = "workout100_v12";
+const STORAGE_KEY = "workout100_v13";
 
 function deepClone(obj){
   if (typeof structuredClone === "function") return structuredClone(obj);
@@ -206,16 +276,11 @@ function deepClone(obj){
 const DEFAULT_DATA = {
   startDate: new Date().toISOString().split("T")[0],
   lastGeneratedKey: null,
-  dayPlan: null, // { warm:[names], mobility:[names], strength:[names] }
+  dayPlan: null,     // legacy
+  daySession: null,  // NEW: session object saved for today
   regen: { date: null, n: 0 },
   completedDate: null,
   streak: 0,
-  prog: {
-    upper: { band: 15, repIndex: 2 },
-    core:  { band: 15, repIndex: 1 },
-    lower: { band: 15, repIndex: 1 }
-  },
-  history: { warm:[], mobility:[], upper:[], core:[], lower:[] },
   sessions: []
 };
 
@@ -241,8 +306,6 @@ function loadData() {
       ...deepClone(DEFAULT_DATA),
       ...parsed,
       regen: { ...deepClone(DEFAULT_DATA).regen, ...(parsed.regen || {}) },
-      prog: { ...deepClone(DEFAULT_DATA).prog, ...(parsed.prog || {}) },
-      history: { ...deepClone(DEFAULT_DATA).history, ...(parsed.history || {}) },
       sessions: sanitizeSessions(parsed.sessions)
     };
 
@@ -266,19 +329,6 @@ let data = loadData();
    UTILS
 ========================== */
 const REPS_OPTIONS=[8,10,12,14,16,18,20];
-const BANDS=[15,25,35];
-const TEMPO="2-1-2";
- function engineCheck(){
-  return {
-    study_loaded: (typeof window.StudyEngine !== "undefined"),
-    study_analyze: (window.StudyEngine && typeof StudyEngine.analyzeExercise === "function"),
-    study_complete: (window.StudyEngine && typeof StudyEngine.completeSession === "function"),
-    biomech_loaded: (typeof window.BiomechanicalEngine !== "undefined"),
-    biomech_analyze: (window.BiomechanicalEngine && typeof BiomechanicalEngine.analyzeExercise === "function"),
-    biomech_complete: (window.BiomechanicalEngine && typeof BiomechanicalEngine.completeSession === "function")
-  };
-}
-
 
 function clamp(n,min,max){return Math.max(min,Math.min(max,n));}
 function today(){return new Date().toISOString().split("T")[0];}
@@ -293,18 +343,6 @@ function escapeHtml(str){
     .replaceAll("'","&#039;");
 }
 
-function mulberry32(a){
-  return function(){
-    var t=a+=0x6D2B79F5;
-    t=Math.imul(t^t>>>15,t|1);
-    t^=t+Math.imul(t^t>>>7,t|61);
-    return ((t^t>>>14)>>>0)/4294967296;
-  }
-}
-function seedFromString(str){
-  let n=0; for(let i=0;i<str.length;i++) n=(n*31 + str.charCodeAt(i))>>>0;
-  return n;
-}
 function uniq(arr){
   const out=[], seen=new Set();
   (arr||[]).forEach(x=>{
@@ -316,112 +354,125 @@ function uniq(arr){
   return out;
 }
 
-/* ==========================
-   NORMALIZZAZIONE ESERCIZI
-========================== */
+function openYouTubeSearch(q){
+  const url = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
+  window.open(url, "_blank", "noopener");
+}
+
+function buildNoAnchorQuery(base){
+  return `${base} elastico sotto piedi senza ancoraggio senza appigli no door anchor no pull up bar`;
+}
+
+function isAnchorExercise(ex){
+  if (ex && ex.requiresAnchor === true) return true;
+  if (ex && ex.noAnchorOk === true) return false;
+
+  const n = (ex && ex.name ? ex.name : String(ex||"")).toLowerCase();
+  const patterns = [
+    "anchor","anchoring","door","porta","door anchor","ancoraggio","appiglio",
+    "pull-up bar","pull up bar","sbarra","barra trazioni","chin-up","chin up",
+    "cable","cavo","cavi","lat machine"
+  ];
+  return patterns.some(p => n.includes(p));
+}
+
+function tutorialLinkFromName(name, noAnchorOnly){
+  const q = noAnchorOnly ? buildNoAnchorQuery(name) : (name + " tutorial");
+  return "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
+}
+
+/* --------------------------
+   Exercise normalization
+-------------------------- */
 function normExercise(x, forcedFamily=null){
   if (!x) return null;
   if (typeof x === "string") {
-    return { name:x, family:(forcedFamily||"core"), cues:[], link:null };
+    return { name:x, family:(forcedFamily||"core"), cues:[], link:null, prescription:null };
   }
   if (typeof x === "object" && x.name) {
     return {
       name: String(x.name),
       family: (forcedFamily || x.family || "core").toLowerCase(),
       cues: Array.isArray(x.cues) ? x.cues.map(String) : (x.cues ? [String(x.cues)] : []),
-      link: x.link ? String(x.link) : null
+      link: x.link ? String(x.link) : null,
+      prescription: x.prescription || x.rx || null,
+      requiresAnchor: x.requiresAnchor === true,
+      noAnchorOk: x.noAnchorOk === true
     };
   }
   return null;
 }
 
-function tutorialLink(ex){
-  const name = typeof ex === "string" ? ex : ex.name;
-  return "https://www.youtube.com/results?search_query=" + encodeURIComponent(name + " tutorial");
-}
-
 /* ==========================
-   PICK STABILE + ANTI RIPETIZIONE
+   ENGINE HOOKS
 ========================== */
-function getHist(bucket){
-  return Array.isArray(data.history[bucket]) ? data.history[bucket] : [];
-}
-function setHist(bucket, arr){
-  data.history[bucket] = arr.slice(0,12);
-}
+function getEngineCues(ex, ctx){
+  const out = [];
 
-function pickStable(bucket, list, count, seedKey){
-  const rng = mulberry32(seedFromString(seedKey));
-  const hist = getHist(bucket);
-
-  let pool = list.filter(ex => !hist.includes(ex.name));
-  if (pool.length < count) pool = list.slice();
-
-  for(let i=pool.length-1;i>0;i--){
-    const j = Math.floor(rng()*(i+1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-
-  const picked = pool.slice(0, count);
-  setHist(bucket, uniq([...picked.map(p=>p.name), ...hist]).slice(0,12));
-  return picked;
-}
-
-/* ==========================
-   WORKOUT ENGINE
-========================== */
-const WorkoutEngine = {
-
-  getSuggested(data, family, mode) {
-    const phase = Math.floor(daysBetween(data.startDate, today()) / 7) % 4;
-    const p = data.prog[family] || { band: 15, repIndex: 2 };
-
-    let repIndex = p.repIndex;
-    let band = p.band;
-
-    if (mode === "35") repIndex++;
-    if (phase === 1) repIndex++;
-    if (phase === 3) repIndex--;
-
-    repIndex = clamp(repIndex, 0, REPS_OPTIONS.length - 1);
-
-    return { band, reps: REPS_OPTIONS[repIndex], repIndex };
-  },
-
-  applyProgression(data, family, repsDone, repsTarget, rpe) {
-
-    let p = data.prog[family] || { band: 15, repIndex: 2 };
-    let bi = BANDS.indexOf(p.band);
-    if (bi < 0) bi = 0;
-
-    if (rpe === 1 && repsDone >= repsTarget) {
-      if (p.repIndex < REPS_OPTIONS.length - 1) {
-        p.repIndex++;
-      } else if (bi < BANDS.length - 1) {
-        bi++;
-        p.band = BANDS[bi];
-        p.repIndex = 1;
+  // Biomechanical
+  try{
+    if (window.BiomechanicalEngine){
+      if (typeof BiomechanicalEngine.getCues === "function"){
+        const c = BiomechanicalEngine.getCues(ex, ctx);
+        if (Array.isArray(c)) out.push(...c);
+      }
+      if (typeof BiomechanicalEngine.analyzeExercise === "function"){
+        const a = BiomechanicalEngine.analyzeExercise(ex, ctx);
+        if (a){
+          if (Array.isArray(a.cues)) out.push(...a.cues);
+          if (Array.isArray(a.attentions)) out.push(...a.attentions);
+          if (typeof a.notes === "string") out.push(a.notes);
+        }
       }
     }
+  }catch(e){}
 
-    if (rpe === 3 && repsDone < repsTarget) {
-      if (p.repIndex > 0) {
-        p.repIndex--;
-      } else if (bi > 0) {
-        bi--;
-        p.band = BANDS[bi];
-        p.repIndex = 1;
+  // Study
+  try{
+    if (window.StudyEngine){
+      if (typeof StudyEngine.getCues === "function"){
+        const c = StudyEngine.getCues(ex, ctx);
+        if (Array.isArray(c)) out.push(...c);
+      }
+      if (typeof StudyEngine.analyzeExercise === "function"){
+        const a = StudyEngine.analyzeExercise(ex, ctx);
+        if (a){
+          if (Array.isArray(a.cues)) out.push(...a.cues);
+          if (Array.isArray(a.attentions)) out.push(...a.attentions);
+          if (typeof a.notes === "string") out.push(a.notes);
+        }
       }
     }
+  }catch(e){}
 
-    data.prog[family] = p;
-  }
-};
+  return out.map(String);
+}
+
+function cuesFallbackByFamily(fam){
+  if (fam === "upper") return ["Scapole stabili (no spalle alle orecchie)", "Collo neutro", "Costole giù (ribs down)", "Controllo eccentrica"];
+  if (fam === "core")  return ["Addome contratto (brace)", "Bacino neutro", "Respira senza perdere tensione", "Stop se dolore lombare"];
+  if (fam === "lower") return ["Schiena neutra", "Ginocchia in linea", "Spinta da anche/glutei", "Controllo caviglie"];
+  if (fam === "warm") return ["Ritmo fluido", "Range controllato", "Respirazione regolare"];
+  if (fam === "mobility") return ["Lento e controllato", "Nessun dolore acuto", "Range progressivo", "Pausa respirazione a fine ROM"];
+  return ["Tecnica prima del volume"];
+}
+
+function getDetailedCues(ex, ctx){
+  const fam = (ex.family || "core").toLowerCase();
+  const cues = uniq([
+    ...(Array.isArray(ex.cues) ? ex.cues : []),
+    ...getEngineCues(ex, ctx),
+    ...cuesFallbackByFamily(fam)
+  ]);
+  // spazio: fino a 12 punti
+  return cues.slice(0, 12);
+}
 
 /* ==========================
-   PLAN (Warm + Mobility + Strength)
+   SESSION GENERATION
 ========================== */
 let plan = { warm:[], mobility:[], strength:[] };
+let lastSessionMeta = null; // for debug/log
 
 function getRegenNonceForToday(){
   if (data.regen.date !== today()) {
@@ -439,117 +490,143 @@ function regenToday(){
     data.regen.n = (data.regen.n || 0) + 1;
   }
   data.lastGeneratedKey = null;
-  data.dayPlan = null;
+  data.daySession = null;
   saveData();
   buildProgram();
 }
 
+function normalizeSessionLists(session){
+  const warm = (session?.warm || session?.warmup || session?.warmUp || []).map(x=>normExercise(x,"warm")).filter(Boolean);
+  const mobility = (session?.mobility || session?.mob || []).map(x=>normExercise(x,"mobility")).filter(Boolean);
+
+  // Strength can be "strength" or "exercises"
+  const strengthRaw = (session?.strength || session?.exercises || []).map(x=>normExercise(x)).filter(Boolean);
+
+  return { warm, mobility, strength: strengthRaw };
+}
+
 function buildProgram(){
   const mode = document.getElementById("mode").value;
+  const sessionMinutes = parseInt(mode, 10);
+
   const nonce = getRegenNonceForToday();
   const key = `${today()}|${mode}|${nonce}`;
 
-  // Conteggi (telefono-friendly: abbastanza esercizi)
-  const warmCount = (mode === "35") ? 3 : 2;
-  const mobCount  = 2;
+  const runDay = !!document.getElementById("runDay")?.checked;
+  const fasting = !!document.getElementById("fasting")?.checked;
+  const noAnchorOnly = !!document.getElementById("noAnchor")?.checked;
+  const band = parseInt(document.getElementById("bandBase")?.value || "25", 10);
 
-  const strengthTotal = (mode === "35") ? 8 : 6;
-  const upperCount = (mode === "35") ? 5 : 4;
-  const coreCount  = (mode === "35") ? 2 : 1;
-  const lowerCount = Math.max(1, strengthTotal - upperCount - coreCount);
+  // Reuse if same day/options
+  if (data.lastGeneratedKey === key && data.daySession) {
+    const lists = normalizeSessionLists(data.daySession);
+    plan = lists;
 
-  const trainAll = exerciseDB.training.map(x=>normExercise(x)).filter(Boolean);
+    // extra safety for noAnchor
+    if (noAnchorOnly) {
+      plan.warm = plan.warm.filter(ex => !isAnchorExercise(ex));
+      plan.mobility = plan.mobility.filter(ex => !isAnchorExercise(ex));
+      plan.strength = plan.strength.filter(ex => !isAnchorExercise(ex));
+    }
 
-  // Warm/mobility: se presenti nel JSON usale; altrimenti fallback controllato
-  const warmSrc = (Array.isArray(exerciseDB.warm) ? exerciseDB.warm : [])
-    .map(x=>normExercise(x,"warm")).filter(Boolean);
-
-  const mobSrc = (Array.isArray(exerciseDB.mobility) ? exerciseDB.mobility : [])
-    .map(x=>normExercise(x,"mobility")).filter(Boolean);
-
-  const warmFallback = [
-    normExercise("Inchworm","warm"),
-    normExercise("Jumping Jacks","warm"),
-    normExercise("Arm Circles","warm"),
-    normExercise("High Knees","warm")
-  ];
-  const mobFallback = [
-    normExercise("90/90 Hip Switch","mobility"),
-    normExercise("Ankle Rock (knee to wall)","mobility"),
-    normExercise("Cat-Cow","mobility"),
-    normExercise("Thoracic Rotation (quadruped)","mobility")
-  ];
-
-  const warmList = warmSrc.length ? warmSrc : warmFallback;
-  const mobList  = mobSrc.length ? mobSrc : mobFallback;
-
-  const upperList = trainAll.filter(ex => ex.family === "upper");
-  const coreList  = trainAll.filter(ex => ex.family === "core");
-  const lowerList = trainAll.filter(ex => ex.family === "lower");
-
-  // Ricostruisci se già generato oggi
-  if (data.lastGeneratedKey === key && data.dayPlan) {
-    const byNameT = new Map(trainAll.map(ex=>[ex.name, ex]));
-    const byNameW = new Map(warmList.map(ex=>[ex.name, ex]));
-    const byNameM = new Map(mobList.map(ex=>[ex.name, ex]));
-
-    plan.warm = (data.dayPlan.warm||[]).map(n=>byNameW.get(n)||normExercise(n,"warm")).filter(Boolean);
-    plan.mobility = (data.dayPlan.mobility||[]).map(n=>byNameM.get(n)||normExercise(n,"mobility")).filter(Boolean);
-    plan.strength = (data.dayPlan.strength||[]).map(n=>byNameT.get(n)).filter(Boolean);
-
+    lastSessionMeta = { source:"cache", key, sessionMinutes, runDay, fasting, band, noAnchorOnly };
     renderProgram();
     updateStatusLine();
     return;
   }
 
-  plan.warm = pickStable("warm", warmList, warmCount, key+":warm");
-  plan.mobility = pickStable("mobility", mobList, mobCount, key+":mob");
+  // Generate via SessionEngine
+  let session = null;
+  if (window.SessionEngine && typeof SessionEngine.generateSession === "function") {
+    try{
+      session = SessionEngine.generateSession(exerciseDB, {
+        sessionMinutes,
+        runDay,
+        fasting,
+        band
+        // NOTE: noAnchorOnly not guaranteed in API, we filter below anyway
+      });
+      // Optional debug
+      // console.log("SessionEngine session:", session);
+    }catch(e){
+      console.error("Errore SessionEngine.generateSession:", e);
+      session = null;
+    }
+  }
 
-  const pickedUpper = pickStable("upper", upperList, upperCount, key+":upper");
-  const pickedCore  = pickStable("core",  coreList,  coreCount,  key+":core");
-  const pickedLower = pickStable("lower", lowerList, lowerCount, key+":lower");
+  // Fallback (if SessionEngine missing)
+  if (!session) {
+    // minimal fallback: take from DB
+    const warmSrc = (Array.isArray(exerciseDB.warm) ? exerciseDB.warm : []);
+    const mobSrc = (Array.isArray(exerciseDB.mobility) ? exerciseDB.mobility : []);
 
-  plan.strength = [...pickedUpper, ...pickedCore, ...pickedLower];
+    const warmFallback = ["Inchworm","Jumping Jacks","Arm Circles","High Knees"];
+    const mobFallback  = ["90/90 Hip Switch","Ankle Rock (knee to wall)","Cat-Cow","Thoracic Rotation (quadruped)"];
 
-  // shuffle deterministico
-  const rng = mulberry32(seedFromString(key+":mix"));
-  for(let i=plan.strength.length-1;i>0;i--){
-    const j=Math.floor(rng()*(i+1));
-    [plan.strength[i], plan.strength[j]] = [plan.strength[j], plan.strength[i]];
+    const warmList = (warmSrc.length ? warmSrc : warmFallback).map(x=>normExercise(x,"warm")).filter(Boolean);
+    const mobList  = (mobSrc.length ? mobSrc : mobFallback).map(x=>normExercise(x,"mobility")).filter(Boolean);
+
+    const training = exerciseDB.training.map(x=>normExercise(x)).filter(Boolean);
+
+    session = {
+      warm: warmList.slice(0, sessionMinutes===35 ? 3 : 2),
+      mobility: mobList.slice(0,2),
+      exercises: training.slice(0, sessionMinutes===35 ? 8 : 6)
+    };
+  }
+
+  // Normalize to plan
+  const lists = normalizeSessionLists(session);
+  plan = lists;
+
+  // Enforce noAnchor on output
+  if (noAnchorOnly) {
+    plan.warm = plan.warm.filter(ex => !isAnchorExercise(ex));
+    plan.mobility = plan.mobility.filter(ex => !isAnchorExercise(ex));
+    plan.strength = plan.strength.filter(ex => !isAnchorExercise(ex));
   }
 
   data.lastGeneratedKey = key;
-  data.dayPlan = {
-    warm: plan.warm.map(x=>x.name),
-    mobility: plan.mobility.map(x=>x.name),
-    strength: plan.strength.map(x=>x.name)
-  };
+  data.daySession = session;
   saveData();
 
+  lastSessionMeta = { source:"engine", key, sessionMinutes, runDay, fasting, band, noAnchorOnly };
   renderProgram();
   updateStatusLine();
 }
 
 /* ==========================
-   CUES (attenzioni)
+   RX / PRESCRIPTION (delegated)
 ========================== */
-function cuesFallbackByFamily(fam){
-  if (fam === "upper") return ["Scapole stabili", "Ribs down", "Collo neutro"];
-  if (fam === "core")  return ["Core contratto", "Bacino neutro", "Respira controllato"];
-  if (fam === "lower") return ["Schiena neutra", "Ginocchia in linea", "Spinta da anche/glutei"];
-  if (fam === "warm") return ["Ritmo fluido", "Respira", "Range comodo"];
-  if (fam === "mobility") return ["Lento e controllato", "Nessun dolore acuto", "Range progressivo"];
-  return ["Tecnica prima del volume"];
-}
+function getRx(ex, ctx){
+  // Priority:
+  // 1) exercise.prescription / rx field (from SessionEngine or DB)
+  // 2) BiomechanicalEngine.getPrescription(ex, ctx)
+  // 3) StudyEngine.getPrescription(ex, ctx)
+  // 4) fallback minimal
 
-function extractStudyCues(analysis){
-  if (!analysis) return [];
-  const out=[];
-  if (Array.isArray(analysis.cues)) out.push(...analysis.cues);
-  if (Array.isArray(analysis.attenzioni)) out.push(...analysis.attenzioni);
-  if (Array.isArray(analysis.attentions)) out.push(...analysis.attentions);
-  if (typeof analysis.notes === "string") out.push(analysis.notes);
-  return out.map(String);
+  const base = ex?.prescription || ex?.rx || null;
+  if (base && typeof base === "object") return base;
+
+  try{
+    if (window.BiomechanicalEngine && typeof BiomechanicalEngine.getPrescription === "function"){
+      const p = BiomechanicalEngine.getPrescription(ex, ctx);
+      if (p && typeof p === "object") return p;
+    }
+  }catch(e){}
+
+  try{
+    if (window.StudyEngine && typeof StudyEngine.getPrescription === "function"){
+      const p = StudyEngine.getPrescription(ex, ctx);
+      if (p && typeof p === "object") return p;
+    }
+  }catch(e){}
+
+  // fallback
+  if (ctx.kind === "warm") return { cycles: 1, reps: 20 };
+  if (ctx.kind === "mobility") return { cycles: 1, reps: 10 };
+  if (ctx.kind === "strength") return { cycles: 2, band: parseInt(document.getElementById("bandBase")?.value || "25", 10), reps: 12 };
+  return { cycles: 1, reps: 10 };
 }
 
 /* ==========================
@@ -560,71 +637,74 @@ function renderProgram(){
   container.innerHTML = "";
 
   const mode = document.getElementById("mode").value;
+  const noAnchorOnly = !!document.getElementById("noAnchor")?.checked;
 
-  container.innerHTML += `<div class="small">Tempo: <b>${TEMPO}</b> — Warm-up → Mobilità → Forza</div><div class="hr"></div>`;
+  container.innerHTML += `<div class="small">Warm-up → Mobilità → Forza</div><div class="hr"></div>`;
 
   container.innerHTML += `<div class="sectionTitle">Riscaldamento (${plan.warm.length})</div>`;
-  plan.warm.forEach(ex => container.innerHTML += renderExerciseCard(ex, mode, false));
+  plan.warm.forEach(ex => container.innerHTML += renderExerciseCard(ex, mode, "warm", noAnchorOnly));
 
   container.innerHTML += `<div class="sectionTitle">Mobilità (${plan.mobility.length})</div>`;
-  plan.mobility.forEach(ex => container.innerHTML += renderExerciseCard(ex, mode, false));
+  plan.mobility.forEach(ex => container.innerHTML += renderExerciseCard(ex, mode, "mobility", noAnchorOnly));
 
   container.innerHTML += `<div class="sectionTitle">Forza (${plan.strength.length})</div>`;
-  plan.strength.forEach((ex, i) => container.innerHTML += renderExerciseCard(ex, mode, true, i));
+  plan.strength.forEach((ex, i) => container.innerHTML += renderExerciseCard(ex, mode, "strength", noAnchorOnly, i));
 }
 
-function renderExerciseCard(ex, mode, isStrength, index){
-  const fam = (ex.family || "core").toLowerCase();
+function renderExerciseCard(ex, mode, kind, noAnchorOnly, index){
+  const fam = (ex.family || (kind==="strength" ? "core" : kind)).toLowerCase();
+  const rx = getRx(ex, { mode, kind, family:fam });
 
-  let analysis = null;
-  if (typeof StudyEngine !== "undefined" && StudyEngine.analyzeExercise) {
-    try { analysis = StudyEngine.analyzeExercise(ex); } catch(e){ analysis = null; }
+  const cues = getDetailedCues(ex, { mode, kind, family:fam });
+
+  const yt = ex.link ? ex.link : tutorialLinkFromName(ex.name, noAnchorOnly);
+
+  const cuesHTML = `
+    <ul class="cuesList">
+      ${cues.map(c=>`<li>${escapeHtml(c)}</li>`).join("")}
+    </ul>
+  `;
+
+  // Rx text
+  let rxText = "";
+  if (kind === "warm" || kind === "mobility") {
+    const cycles = rx?.cycles ?? 1;
+    const reps = rx?.reps ?? (kind==="warm" ? 20 : 10);
+    rxText = `<div class="small" style="margin-top:8px"><b>Rx:</b> ${cycles} ciclo/i × ${reps} reps</div>`;
   }
 
-  const cues = uniq([
-    ...(Array.isArray(ex.cues) ? ex.cues : []),
-    ...extractStudyCues(analysis),
-    ...cuesFallbackByFamily(fam)
-  ]).slice(0,5);
-
-  const cuesHTML = cues.length
-    ? `<div class="cues small"><b>Attenzioni:</b> ${escapeHtml(cues.join(" • "))}</div>`
-    : "";
-
-  const yt = ex.link || tutorialLink(ex);
-
   let strengthHTML = "";
-  if (isStrength) {
-    const sug = WorkoutEngine.getSuggested(data, fam, mode);
+  if (kind === "strength") {
+    const cycles = rx?.cycles ?? 2;
+    const band = rx?.band ?? parseInt(document.getElementById("bandBase")?.value || "25", 10);
+    const repsTarget = rx?.reps ?? 12;
+
     strengthHTML = `
       <div class="small" style="margin-top:8px">
-        Banda: <b>${sug.band}</b> kg — Target reps: <b>${sug.reps}</b>
+        <b>Rx:</b> ${cycles} ciclo/i • Banda: <b>${band}</b> • Target reps: <b>${repsTarget}</b>
       </div>
+
+      <div class="small" style="margin-top:8px">Reps fatte</div>
       <select class="didReps" data-index="${index}">
-        ${REPS_OPTIONS.map(r => `<option ${r === sug.reps ? "selected" : ""}>${r}</option>`).join("")}
+        ${REPS_OPTIONS.map(r => `<option ${r === repsTarget ? "selected" : ""}>${r}</option>`).join("")}
       </select>
     `;
   }
 
-  // Mostra mini-info tecniche se presenti
-  const analysisHTML = analysis ? `
-    <div class="small" style="margin-top:6px">
-      ${analysis.pattern ? `Pattern: ${escapeHtml(analysis.pattern)}<br>` : ``}
-      ${analysis.spinalLoad ? `Carico rachide: ${escapeHtml(analysis.spinalLoad)}<br>` : ``}
-      ${analysis.evidenceTag ? `Evidenza: ${escapeHtml(analysis.evidenceTag)}<br>` : ``}
-    </div>
-  ` : "";
-
   return `
-    <div class="exercise" data-kind="${isStrength ? "strength" : "aux"}">
-      <b>${escapeHtml(ex.name)}</b><br>
-      <span class="small">Family: ${escapeHtml(fam)}</span>
-      ${analysisHTML}
-      ${cuesHTML}
-      ${strengthHTML}
-      <div class="small" style="margin-top:8px">
-        <a href="${yt}" target="_blank" rel="noopener">Tutorial</a>
+    <div class="exercise" data-kind="${kind}">
+      <div class="exerciseHeader">
+        <b>${escapeHtml(ex.name)}</b>
+        <a class="toolBtn" href="${yt}" target="_blank" rel="noopener">T</a>
       </div>
+
+      <span class="small">Family: ${escapeHtml(fam)}</span>
+      ${rxText}
+
+      <div class="small" style="margin-top:10px"><b>Attenzioni</b></div>
+      ${cuesHTML}
+
+      ${strengthHTML}
     </div>
   `;
 }
@@ -642,6 +722,10 @@ function completeWorkout(){
   const rpe = parseInt(document.getElementById("rpeGlobal").value, 10);
   if (isNaN(rpe)) { alert("RPE non valido."); return; }
 
+  const t = today();
+  const noAnchorOnly = !!document.getElementById("noAnchor")?.checked;
+
+  // gather strength done
   const strengthEls = document.querySelectorAll(".exercise[data-kind='strength']");
   const sessionExercises = [];
 
@@ -650,25 +734,23 @@ function completeWorkout(){
     if (!ex) return;
 
     const sel = el.querySelector(".didReps");
-    if (!sel) return;
+    const repsDone = sel ? parseInt(sel.value, 10) : null;
 
-    const repsDone = parseInt(sel.value, 10);
     const fam = (ex.family || "core").toLowerCase();
-    const sug = WorkoutEngine.getSuggested(data, fam, mode);
-
-    WorkoutEngine.applyProgression(data, fam, repsDone, sug.reps, rpe);
+    const rx = getRx(ex, { mode, kind:"strength", family:fam });
 
     sessionExercises.push({
       name: ex.name,
       family: fam,
-      repsTarget: sug.reps,
-      repsDone: repsDone,
-      band: sug.band
+      repsTarget: rx?.reps ?? null,
+      repsDone: Number.isFinite(repsDone) ? repsDone : null,
+      band: rx?.band ?? null,
+      cycles: rx?.cycles ?? null,
+      tutorial: ex.link ? ex.link : tutorialLinkFromName(ex.name, noAnchorOnly)
     });
   });
 
   // streak
-  const t = today();
   if (data.completedDate) {
     const diff = daysBetween(data.completedDate, t);
     data.streak = (diff === 1) ? (data.streak + 1) : 1;
@@ -677,13 +759,51 @@ function completeWorkout(){
   }
   data.completedDate = t;
 
+  // engine completion outputs
+  let studyOut = null;
+  let biomechOut = null;
+  let sessionOut = null;
+
+  const payload = {
+    date: t,
+    mode,
+    rpe,
+    warm: plan.warm.map(x=>x.name),
+    mobility: plan.mobility.map(x=>x.name),
+    exercises: sessionExercises
+  };
+
+  try{
+    if (window.StudyEngine && typeof StudyEngine.completeSession === "function") {
+      studyOut = StudyEngine.completeSession(payload);
+    }
+  }catch(e){ studyOut = { error: String(e?.message || e) }; }
+
+  try{
+    if (window.BiomechanicalEngine && typeof BiomechanicalEngine.completeSession === "function") {
+      biomechOut = BiomechanicalEngine.completeSession(payload);
+    }
+  }catch(e){ biomechOut = { error: String(e?.message || e) }; }
+
+  try{
+    if (window.SessionEngine && typeof SessionEngine.completeSession === "function") {
+      sessionOut = SessionEngine.completeSession(payload);
+    }
+  }catch(e){ sessionOut = { error: String(e?.message || e) }; }
+
   data.sessions.push({
     date: t,
     mode: mode,
     rpe: rpe,
     warm: plan.warm.map(x=>x.name),
     mobility: plan.mobility.map(x=>x.name),
-    exercises: sessionExercises
+    exercises: sessionExercises,
+    engines: {
+      study: studyOut,
+      biomech: biomechOut,
+      session: sessionOut
+    },
+    meta: lastSessionMeta || null
   });
 
   saveData();
@@ -700,8 +820,13 @@ function updateStatusLine(){
   const done = (data.completedDate === today());
   const streak = data.streak || 0;
 
+  const sOK = !!(window.StudyEngine);
+  const bOK = !!(window.BiomechanicalEngine);
+  const seOK = !!(window.SessionEngine && typeof SessionEngine.generateSession === "function");
+
   document.getElementById("statusLine").innerHTML =
-    `Oggi: <b>${today()}</b> — Completato: <b style="color:${done ? "var(--ok)" : "var(--warn)"}">${done ? "SÌ" : "NO"}</b> — Streak: <b>${streak}</b>`;
+    `Oggi: <b>${today()}</b> — Completato: <b style="color:${done ? "var(--ok)" : "var(--warn)"}">${done ? "SÌ" : "NO"}</b> — Streak: <b>${streak}</b>` +
+    `<br>Motori: Study(${sOK ? "OK" : "NO"}) • Bio(${bOK ? "OK" : "NO"}) • Session(${seOK ? "OK" : "NO"})`;
 }
 
 function updateLog(){
@@ -715,14 +840,13 @@ function updateLog(){
 
   const last = data.sessions[data.sessions.length - 1];
 
-  // vista telefono-friendly + JSON espandibile
   const lines = [];
   lines.push(`Ultima sessione: ${last.date} • ${last.mode} min • RPE ${last.rpe}`);
   lines.push(`Warm: ${Array.isArray(last.warm) ? last.warm.join(", ") : "-"}`);
   lines.push(`Mobility: ${Array.isArray(last.mobility) ? last.mobility.join(", ") : "-"}`);
   lines.push(`Esercizi forza:`);
   (last.exercises||[]).forEach((e, idx)=>{
-    lines.push(`${idx+1}. ${e.name} [${e.family}]  ${e.band}kg  target ${e.repsTarget} → fatto ${e.repsDone}`);
+    lines.push(`${idx+1}. ${e.name} [${e.family}]  band:${e.band ?? "-"}  rx:${e.repsTarget ?? "-"} reps × ${e.cycles ?? "-"}  → fatto:${e.repsDone ?? "-"}`);
   });
 
   box.innerHTML =
@@ -742,12 +866,31 @@ function boot() {
   const completeBtn = document.getElementById("completeBtn");
   const modeSel = document.getElementById("mode");
 
+  const ytBtn = document.getElementById("ytBtn");
+  const ytQuery = document.getElementById("ytQuery");
+
+  const runDay = document.getElementById("runDay");
+  const fasting = document.getElementById("fasting");
+  const noAnchor = document.getElementById("noAnchor");
+  const bandBase = document.getElementById("bandBase");
+
   if (regenBtn) regenBtn.addEventListener("click", regenToday);
   if (completeBtn) completeBtn.addEventListener("click", completeWorkout);
   if (modeSel) modeSel.addEventListener("change", buildProgram);
 
+  if (runDay) runDay.addEventListener("change", buildProgram);
+  if (fasting) fasting.addEventListener("change", buildProgram);
+  if (noAnchor) noAnchor.addEventListener("change", buildProgram);
+  if (bandBase) bandBase.addEventListener("change", buildProgram);
+
+  if (ytBtn) ytBtn.addEventListener("click", ()=>{
+    const q = (ytQuery && ytQuery.value ? ytQuery.value.trim() : "");
+    if (!q) return;
+    const noA = !!document.getElementById("noAnchor")?.checked;
+    openYouTubeSearch(noA ? buildNoAnchorQuery(q) : q);
+  });
+
   updateStatusLine();
-  console.log("Engine status:", engineCheck());
   updateLog();
   buildProgram();
 }
