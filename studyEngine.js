@@ -1,113 +1,158 @@
-/* ==========================================
-   STUDY ENGINE
-   Motore tecnico-scientifico allenamento
-========================================== */
+// ===============================
+// STUDY ENGINE CORE v1.0
+// ===============================
 
-const StudyEngine = {
+const StudyEngine = (function(){
 
-  /* ==========================
-     1️⃣ ANALISI ESERCIZIO
-  ========================== */
+// ---- CONFIG BASE ----
 
-  analyzeExercise(ex){
+const BAND_LEVELS = [15,25,35];
 
-    return {
-      pattern: this.getMovementPattern(ex),
-      spinalLoad: this.getSpinalLoad(ex),
-      stabilityDemand: this.getStabilityDemand(ex),
-      primaryMuscle: ex.primary_muscle || "general",
-      evidenceTag: this.getEvidenceTag(ex)
-    };
+const TENSION_FACTOR = {
+  15:1.0,
+  25:1.4,
+  35:1.8
+};
 
-  },
+const DEFAULT_CATEGORY = () => ({
+  band:15,
+  time:40,
+  sets:3,
+  streak:0,
+  fatigue:0
+});
 
-  getMovementPattern(ex){
-    return ex.movement_pattern || "unknown";
-  },
+// ---- INITIAL STATE ----
 
-  getSpinalLoad(ex){
-
-    if(ex.load_type === "external" && ex.movement_pattern === "hinge"){
-      return "high_lumbar_load";
+function initState(){
+  return {
+    week:1,
+    sessions:[],
+    categories:{
+      pull:DEFAULT_CATEGORY(),
+      push:DEFAULT_CATEGORY(),
+      posterior:{band:25,time:40,sets:3,streak:0,fatigue:0},
+      core:{time:30,sets:2,streak:0,fatigue:0}
     }
+  };
+}
 
-    if(ex.movement_pattern === "anti_extension"){
-      return "protective_core";
-    }
+// ---- LOAD / SAVE ----
 
-    return "moderate";
-  },
+function load(){
+  return JSON.parse(localStorage.getItem("studyEngine")) || initState();
+}
 
-  getStabilityDemand(ex){
+function save(data){
+  localStorage.setItem("studyEngine",JSON.stringify(data));
+}
 
-    if(ex.type === "unilateral") return "high";
-    if(ex.type === "band") return "moderate";
-    return "low";
-  },
+// ---- STIMULUS CALC ----
 
-  getEvidenceTag(ex){
+function calcStimulus(cat){
+  return cat.time * cat.sets * TENSION_FACTOR[cat.band];
+}
 
-    // Qui collegherai la tua bibliografia
-    if(ex.movement_pattern === "hinge"){
-      return "McGill_spine_mechanics";
-    }
+// ---- PROGRESSION LOGIC ----
 
-    if(ex.movement_pattern === "horizontal_pull"){
-      return "Scapular_retraction_evidence";
-    }
+function progressCategory(cat, rpe){
 
-    return "general_strength_guidelines";
-  },
+  // RPE: 1=Facile, 2=Medio, 3=Duro
 
-  /* ==========================
-     2️⃣ STRUTTURA ALLENAMENTO
-  ========================== */
-
-  buildSessionStructure(mode){
-
-    if(mode === "25"){
-      return {
-        mobility: 3,
-        activation: 2,
-        strength: 5,
-        metabolic: 2,
-        cooldown: 1
-      };
-    }
-
-    if(mode === "35"){
-      return {
-        mobility: 4,
-        activation: 3,
-        strength: 7,
-        metabolic: 3,
-        cooldown: 1
-      };
-    }
-
-  },
-
-  /* ==========================
-     3️⃣ CONTROLLO VOLUME
-  ========================== */
-
-  validateSession(exercises){
-
-    let hingeCount = 0;
-    let lumbarLoadHigh = 0;
-
-    exercises.forEach(ex=>{
-      const analysis = this.analyzeExercise(ex);
-
-      if(analysis.pattern === "hinge") hingeCount++;
-      if(analysis.spinalLoad === "high_lumbar_load") lumbarLoadHigh++;
-    });
-
-    return {
-      hingeCount,
-      lumbarLoadHigh,
-      warning: lumbarLoadHigh > 2 ? "Ridurre carico lombare" : null
-    };
+  if(rpe <=2){
+    cat.streak++;
+  } else {
+    cat.streak = 0;
+    cat.fatigue++;
   }
 
+  // DELoad
+  if(cat.fatigue >=2){
+    cat.time = Math.max(35, cat.time - 5);
+    cat.sets = Math.max(2, cat.sets - 1);
+    cat.fatigue = 0;
+    cat.streak = 0;
+    return cat;
+  }
+
+  // PROGRESSION
+  if(cat.streak >=2){
+
+    if(cat.time < 50){
+      cat.time += 5;
+    } 
+    else if(cat.sets < 4){
+      cat.sets += 1;
+    } 
+    else {
+      let nextIndex = BAND_LEVELS.indexOf(cat.band)+1;
+      if(nextIndex < BAND_LEVELS.length){
+        cat.band = BAND_LEVELS[nextIndex];
+      }
+      cat.time = 40;
+      cat.sets = 3;
+    }
+
+    cat.streak = 0;
+  }
+
+  return cat;
+}
+
+// ---- LUMBAR PROTECTION RULE ----
+
+function lumbarCheck(data){
+
+  let pullLoad = calcStimulus(data.categories.pull);
+  let posteriorLoad = calcStimulus(data.categories.posterior);
+
+  if(posteriorLoad > pullLoad * 1.2){
+    data.categories.posterior.time -=5;
+    data.categories.posterior.sets = Math.max(2,data.categories.posterior.sets-1);
+  }
+
+  return data;
+}
+
+// ---- SESSION COMPLETE ----
+
+function completeSession(inputRPE){
+
+  // inputRPE example:
+  // {pull:1,push:2,posterior:2,core:1}
+
+  let data = load();
+
+  Object.keys(inputRPE).forEach(cat=>{
+    if(data.categories[cat]){
+      data.categories[cat] = progressCategory(data.categories[cat], inputRPE[cat]);
+    }
+  });
+
+  data = lumbarCheck(data);
+
+  data.sessions.push({
+    date:new Date().toISOString(),
+    week:data.week
+  });
+
+  // Week increment every 3 sessions
+  if(data.sessions.length % 3 ===0){
+    data.week++;
+  }
+
+  save(data);
+  return data;
+}
+
+// ---- EXPORT ----
+
+return {
+  init:initState,
+  load,
+  save,
+  completeSession,
+  calcStimulus
 };
+
+})();
