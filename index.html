@@ -111,7 +111,7 @@ async function loadDB() {
     const programDiv = document.getElementById("program");
     if (programDiv) {
       programDiv.innerHTML =
-        "<b>Errore caricamento exercises.json</b><br>" + e.message;
+           "<b>Errore caricamento exercises.json</b><br>" + err.message;
     }
   }
 }
@@ -329,6 +329,23 @@ function renderProgram() {
   });
 
 }
+   function boot() {
+  // collega i bottoni
+  const regenBtn = document.getElementById("regenBtn");
+  const completeBtn = document.getElementById("completeBtn");
+  const modeSel = document.getElementById("mode");
+
+  if (regenBtn) regenBtn.addEventListener("click", buildProgram);
+  if (completeBtn) completeBtn.addEventListener("click", completeWorkout);
+  if (modeSel) modeSel.addEventListener("change", buildProgram);
+
+  // mostra log esistente (se presente)
+  updateLog();
+
+  // genera programma iniziale
+  buildProgram();
+}
+
 /* ==========================
    COMPLETE
 ========================== */
@@ -391,6 +408,9 @@ function completeWorkout(){
   alert("Allenamento salvato.");
 
 }
+document.addEventListener("DOMContentLoaded", () => {
+  loadDB();
+});
 
 /* ==========================
    LOG
