@@ -124,32 +124,64 @@ async function loadDB() {
    STORAGE
 ========================== */
 
-const STORAGE_KEY="workout100_v9";
+const STORAGE_KEY = "workout100_v9";
 
-const DEFAULT_DATA={
-startDate:new Date().toISOString().split("T")[0],
-lastGeneratedKey:null,
-dayPicks: null,
-completedDate: null,
-streak:0,
-prog:{upper:{band:15,repIndex:2},core:{band:15,repIndex:1},lower:{band:15,repIndex:1}},
-history:{},
-sessions:[]
+const DEFAULT_DATA = {
+  startDate: new Date().toISOString().split("T")[0],
+  lastGeneratedKey: null,
+  dayPicks: null,
+  completedDate: null,
+  streak: 0,
+  prog: {
+    upper: { band: 15, repIndex: 2 },
+    core:  { band: 15, repIndex: 1 },
+    lower: { band: 15, repIndex: 1 }
+  },
+  history: {},
+  sessions: []
 };
 
-function loadData(){}
-try{
-const raw=localStorage.getItem(STORAGE_KEY);
-if(!raw) return structuredClone(DEFAULT_DATA);
-const parsed=JSON.parse(raw);
-return {...structuredClone(DEFAULT_DATA),...parsed};
-}catch{
-return structuredClone(DEFAULT_DATA);
+/* ---------- LOAD ---------- */
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+
+    if (!raw) {
+      return structuredClone(DEFAULT_DATA);
+    }
+
+    const parsed = JSON.parse(raw);
+
+    // Merge sicuro per evitare campi mancanti
+    return {
+      ...structuredClone(DEFAULT_DATA),
+      ...parsed,
+      prog: {
+        ...structuredClone(DEFAULT_DATA.prog),
+        ...(parsed.prog || {})
+      },
+      history: parsed.history || {},
+      sessions: parsed.sessions || []
+    };
+
+  } catch (e) {
+    console.warn("Errore lettura localStorage, reset dati:", e);
+    return structuredClone(DEFAULT_DATA);
+  }
 }
 
-function saveData(){
-localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
+/* ---------- SAVE ---------- */
+
+function saveData() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error("Errore salvataggio localStorage:", e);
+  }
 }
+
+/* ---------- INIT ---------- */
 
 let data = loadData();
 
