@@ -55,8 +55,23 @@ RPE:
 ========================== */
 
 let exerciseDB=null;
-
 async function loadDB(){
+  try{
+    const res = await fetch("exercises.json",{cache:"no-store"});
+
+    if(!res.ok){
+      throw new Error("HTTP "+res.status);
+    }
+
+    exerciseDB = await res.json();
+    boot();
+
+  }catch(e){
+    console.error("Errore fetch:", e);
+    document.getElementById("program").innerHTML =
+      "<b>Errore caricamento exercises.json</b><br>"+e;
+  }
+{
 try{
 const res=await fetch("exercises.json",{cache:"no-store"});
 exerciseDB=await res.json();
