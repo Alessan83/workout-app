@@ -23,7 +23,12 @@ body{
   background:var(--bg);
   color:var(--text);
   margin:0;
-  padding:14px;
+  padding:12px;
+}
+
+h1{
+  margin:6px 0 10px;
+  font-size:20px;
 }
 
 .card{
@@ -37,11 +42,12 @@ body{
 
 .card.controls{
   position:sticky;
-  top:10px;
+  top:8px;
   z-index:10;
-  box-shadow:0 6px 20px rgba(0,0,0,.25);
+  box-shadow:0 6px 20px rgba(0,0,0,.22);
 }
 
+/* ---- Esercizi ---- */
 .exercise{
   border:1px solid var(--line);
   border-radius:10px;
@@ -56,6 +62,7 @@ button{cursor:pointer}
 a{color:var(--accent); text-decoration:none}
 a:hover{text-decoration:underline}
 
+/* ---- Controls ---- */
 .controlsGrid{
   display:flex;
   gap:10px;
@@ -79,35 +86,32 @@ select, button, input{
   padding:10px;
   font-size:14px;
 }
-button{
-  background:#0b0d12;
-}
+button{ background:#0b0d12; }
 .actions{
   display:flex;
   gap:10px;
   flex-wrap:wrap;
 }
 
+/* ---- Sections ---- */
 .sectionTitle{
   margin:12px 0 6px;
   font-weight:700;
   letter-spacing:.2px;
 }
-
 .hr{
   height:1px;
   background:var(--line);
   margin:10px 0;
 }
 
-/* ===== NEW UI PIECES (no style overhaul) ===== */
+/* ---- UI pieces ---- */
 .exerciseHeader{
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:10px;
 }
-
 .toolBtn{
   display:inline-flex;
   align-items:center;
@@ -134,15 +138,7 @@ button{
   line-height:1.3;
 }
 
-.searchRow{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  margin-top:10px;
-}
-.searchRow input{
-  flex:1 1 240px;
-}
+/* ---- Toggles ---- */
 .toggleRow{
   margin-top:10px;
 }
@@ -154,14 +150,43 @@ button{
   color:var(--muted);
 }
 
-/* Phone comfort */
+/* ---- Phone comfort: shrink CONTROL area so you see 1–2 exercises ---- */
 @media (max-width:560px){
   body{padding:10px}
-  h1{font-size:20px;margin:6px 0 10px}
+  h1{font-size:18px;margin:6px 0 8px}
+
   .card{padding:10px;margin:8px auto}
-  .controlsGrid{flex-direction:column;align-items:stretch}
-  .actions{flex-direction:column}
-  select, button, input{width:100%; font-size:16px; padding:12px}
+
+  .controlsGrid{
+    gap:8px;
+  }
+  /* controls compact on phone */
+  .card.controls{
+    padding:8px;
+    top:6px;
+  }
+  .controlsGrid .field{gap:3px}
+  select, button, input{
+    width:100%;
+    font-size:15px;
+    padding:8px 10px;
+  }
+  .actions{
+    width:100%;
+    gap:8px;
+  }
+  .actions button{
+    width:49%;
+  }
+
+  .toggleRow{
+    margin-top:8px;
+  }
+  .toggleRow label{
+    font-size:12px;
+    gap:6px;
+  }
+
   .exercise{padding:12px}
   .toolBtn{width:52px;height:52px;font-size:26px}
 }
@@ -210,11 +235,6 @@ button{
     <label><input type="checkbox" id="runDay" /> Giorno corsa/bici (riduci gambe)</label>
     <label><input type="checkbox" id="fasting" /> Digiuno (riduci volume)</label>
     <label><input type="checkbox" id="noAnchor" checked /> Solo esercizi senza appigli/ancoraggi</label>
-  </div>
-
-  <div class="searchRow">
-    <input id="ytQuery" placeholder="Cerca su YouTube (es. band row sotto piedi)" />
-    <button id="ytBtn">Cerca</button>
   </div>
 
   <div class="small" id="statusLine" style="margin-top:8px"></div>
@@ -277,7 +297,7 @@ const DEFAULT_DATA = {
   startDate: new Date().toISOString().split("T")[0],
   lastGeneratedKey: null,
   dayPlan: null,     // legacy
-  daySession: null,  // NEW: session object saved for today
+  daySession: null,  // session object saved for today
   regen: { date: null, n: 0 },
   completedDate: null,
   streak: 0,
@@ -330,7 +350,6 @@ let data = loadData();
 ========================== */
 const REPS_OPTIONS=[8,10,12,14,16,18,20];
 
-function clamp(n,min,max){return Math.max(min,Math.min(max,n));}
 function today(){return new Date().toISOString().split("T")[0];}
 function daysBetween(d1,d2){return Math.floor((new Date(d2)-new Date(d1))/86400000);}
 
@@ -352,11 +371,6 @@ function uniq(arr){
     seen.add(s); out.push(s);
   });
   return out;
-}
-
-function openYouTubeSearch(q){
-  const url = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
-  window.open(url, "_blank", "noopener");
 }
 
 function buildNoAnchorQuery(base){
@@ -464,7 +478,6 @@ function getDetailedCues(ex, ctx){
     ...getEngineCues(ex, ctx),
     ...cuesFallbackByFamily(fam)
   ]);
-  // spazio: fino a 12 punti
   return cues.slice(0, 12);
 }
 
@@ -472,7 +485,7 @@ function getDetailedCues(ex, ctx){
    SESSION GENERATION
 ========================== */
 let plan = { warm:[], mobility:[], strength:[] };
-let lastSessionMeta = null; // for debug/log
+let lastSessionMeta = null;
 
 function getRegenNonceForToday(){
   if (data.regen.date !== today()) {
@@ -498,10 +511,7 @@ function regenToday(){
 function normalizeSessionLists(session){
   const warm = (session?.warm || session?.warmup || session?.warmUp || []).map(x=>normExercise(x,"warm")).filter(Boolean);
   const mobility = (session?.mobility || session?.mob || []).map(x=>normExercise(x,"mobility")).filter(Boolean);
-
-  // Strength can be "strength" or "exercises"
   const strengthRaw = (session?.strength || session?.exercises || []).map(x=>normExercise(x)).filter(Boolean);
-
   return { warm, mobility, strength: strengthRaw };
 }
 
@@ -512,17 +522,16 @@ function buildProgram(){
   const nonce = getRegenNonceForToday();
   const key = `${today()}|${mode}|${nonce}`;
 
-  const runDay = !!document.getElementById("runDay")?.checked;
-  const fasting = !!document.getElementById("fasting")?.checked;
+  const runDay = false;
+  const fasting = false;
   const noAnchorOnly = !!document.getElementById("noAnchor")?.checked;
   const band = parseInt(document.getElementById("bandBase")?.value || "25", 10);
 
-  // Reuse if same day/options
+  // Reuse same day/options
   if (data.lastGeneratedKey === key && data.daySession) {
     const lists = normalizeSessionLists(data.daySession);
     plan = lists;
 
-    // extra safety for noAnchor
     if (noAnchorOnly) {
       plan.warm = plan.warm.filter(ex => !isAnchorExercise(ex));
       plan.mobility = plan.mobility.filter(ex => !isAnchorExercise(ex));
@@ -539,32 +548,20 @@ function buildProgram(){
   let session = null;
   if (window.SessionEngine && typeof SessionEngine.generateSession === "function") {
     try{
-      session = SessionEngine.generateSession(exerciseDB, {
-        sessionMinutes,
-        runDay,
-        fasting,
-        band
-        // NOTE: noAnchorOnly not guaranteed in API, we filter below anyway
-      });
-      // Optional debug
-      // console.log("SessionEngine session:", session);
+      session = SessionEngine.generateSession(exerciseDB, { sessionMinutes, runDay, fasting, band });
     }catch(e){
       console.error("Errore SessionEngine.generateSession:", e);
       session = null;
     }
   }
 
-  // Fallback (if SessionEngine missing)
+  // Fallback
   if (!session) {
-    // minimal fallback: take from DB
-    const warmSrc = (Array.isArray(exerciseDB.warm) ? exerciseDB.warm : []);
-    const mobSrc = (Array.isArray(exerciseDB.mobility) ? exerciseDB.mobility : []);
-
     const warmFallback = ["Inchworm","Jumping Jacks","Arm Circles","High Knees"];
     const mobFallback  = ["90/90 Hip Switch","Ankle Rock (knee to wall)","Cat-Cow","Thoracic Rotation (quadruped)"];
 
-    const warmList = (warmSrc.length ? warmSrc : warmFallback).map(x=>normExercise(x,"warm")).filter(Boolean);
-    const mobList  = (mobSrc.length ? mobSrc : mobFallback).map(x=>normExercise(x,"mobility")).filter(Boolean);
+    const warmList = warmFallback.map(x=>normExercise(x,"warm")).filter(Boolean);
+    const mobList  = mobFallback.map(x=>normExercise(x,"mobility")).filter(Boolean);
 
     const training = exerciseDB.training.map(x=>normExercise(x)).filter(Boolean);
 
@@ -575,11 +572,8 @@ function buildProgram(){
     };
   }
 
-  // Normalize to plan
-  const lists = normalizeSessionLists(session);
-  plan = lists;
+  plan = normalizeSessionLists(session);
 
-  // Enforce noAnchor on output
   if (noAnchorOnly) {
     plan.warm = plan.warm.filter(ex => !isAnchorExercise(ex));
     plan.mobility = plan.mobility.filter(ex => !isAnchorExercise(ex));
@@ -599,12 +593,6 @@ function buildProgram(){
    RX / PRESCRIPTION (delegated)
 ========================== */
 function getRx(ex, ctx){
-  // Priority:
-  // 1) exercise.prescription / rx field (from SessionEngine or DB)
-  // 2) BiomechanicalEngine.getPrescription(ex, ctx)
-  // 3) StudyEngine.getPrescription(ex, ctx)
-  // 4) fallback minimal
-
   const base = ex?.prescription || ex?.rx || null;
   if (base && typeof base === "object") return base;
 
@@ -622,7 +610,6 @@ function getRx(ex, ctx){
     }
   }catch(e){}
 
-  // fallback
   if (ctx.kind === "warm") return { cycles: 1, reps: 20 };
   if (ctx.kind === "mobility") return { cycles: 1, reps: 10 };
   if (ctx.kind === "strength") return { cycles: 2, band: parseInt(document.getElementById("bandBase")?.value || "25", 10), reps: 12 };
@@ -654,9 +641,7 @@ function renderProgram(){
 function renderExerciseCard(ex, mode, kind, noAnchorOnly, index){
   const fam = (ex.family || (kind==="strength" ? "core" : kind)).toLowerCase();
   const rx = getRx(ex, { mode, kind, family:fam });
-
   const cues = getDetailedCues(ex, { mode, kind, family:fam });
-
   const yt = ex.link ? ex.link : tutorialLinkFromName(ex.name, noAnchorOnly);
 
   const cuesHTML = `
@@ -665,7 +650,6 @@ function renderExerciseCard(ex, mode, kind, noAnchorOnly, index){
     </ul>
   `;
 
-  // Rx text
   let rxText = "";
   if (kind === "warm" || kind === "mobility") {
     const cycles = rx?.cycles ?? 1;
@@ -705,6 +689,10 @@ function renderExerciseCard(ex, mode, kind, noAnchorOnly, index){
       ${cuesHTML}
 
       ${strengthHTML}
+
+      <div class="small" style="margin-top:8px">
+        <a href="${yt}" target="_blank" rel="noopener">Video</a>
+      </div>
     </div>
   `;
 }
@@ -725,18 +713,18 @@ function completeWorkout(){
   const t = today();
   const noAnchorOnly = !!document.getElementById("noAnchor")?.checked;
 
-  // gather strength done
-  const strengthEls = document.querySelectorAll(".exercise[data-kind='strength']");
+  const exEls = document.querySelectorAll(".exercise[data-kind='strength']");
   const sessionExercises = [];
 
-  strengthEls.forEach((el, i) => {
+  exEls.forEach((el, i) => {
     const ex = plan.strength[i];
     if (!ex) return;
 
-    const sel = el.querySelector(".didReps");
-    const repsDone = sel ? parseInt(sel.value, 10) : null;
+    const select = el.querySelector(".didReps");
+    if (!select) return;
 
-    const fam = (ex.family || "core").toLowerCase();
+    const repsDone = parseInt(select.value, 10);
+    const fam = ex.family || "core";
     const rx = getRx(ex, { mode, kind:"strength", family:fam });
 
     sessionExercises.push({
@@ -746,7 +734,7 @@ function completeWorkout(){
       repsDone: Number.isFinite(repsDone) ? repsDone : null,
       band: rx?.band ?? null,
       cycles: rx?.cycles ?? null,
-      tutorial: ex.link ? ex.link : tutorialLinkFromName(ex.name, noAnchorOnly)
+      video: ex.link ? ex.link : tutorialLinkFromName(ex.name, noAnchorOnly)
     });
   });
 
@@ -759,11 +747,6 @@ function completeWorkout(){
   }
   data.completedDate = t;
 
-  // engine completion outputs
-  let studyOut = null;
-  let biomechOut = null;
-  let sessionOut = null;
-
   const payload = {
     date: t,
     mode,
@@ -773,38 +756,24 @@ function completeWorkout(){
     exercises: sessionExercises
   };
 
+  // Engines completion (optional)
   try{
     if (window.StudyEngine && typeof StudyEngine.completeSession === "function") {
-      studyOut = StudyEngine.completeSession(payload);
+      StudyEngine.completeSession(payload);
     }
-  }catch(e){ studyOut = { error: String(e?.message || e) }; }
-
+  }catch(e){}
   try{
     if (window.BiomechanicalEngine && typeof BiomechanicalEngine.completeSession === "function") {
-      biomechOut = BiomechanicalEngine.completeSession(payload);
+      BiomechanicalEngine.completeSession(payload);
     }
-  }catch(e){ biomechOut = { error: String(e?.message || e) }; }
-
+  }catch(e){}
   try{
     if (window.SessionEngine && typeof SessionEngine.completeSession === "function") {
-      sessionOut = SessionEngine.completeSession(payload);
+      SessionEngine.completeSession(payload);
     }
-  }catch(e){ sessionOut = { error: String(e?.message || e) }; }
+  }catch(e){}
 
-  data.sessions.push({
-    date: t,
-    mode: mode,
-    rpe: rpe,
-    warm: plan.warm.map(x=>x.name),
-    mobility: plan.mobility.map(x=>x.name),
-    exercises: sessionExercises,
-    engines: {
-      study: studyOut,
-      biomech: biomechOut,
-      session: sessionOut
-    },
-    meta: lastSessionMeta || null
-  });
+  data.sessions.push(payload);
 
   saveData();
   updateLog();
@@ -865,10 +834,6 @@ function boot() {
   const regenBtn = document.getElementById("regenBtn");
   const completeBtn = document.getElementById("completeBtn");
   const modeSel = document.getElementById("mode");
-
-  const ytBtn = document.getElementById("ytBtn");
-  const ytQuery = document.getElementById("ytQuery");
-
   const runDay = document.getElementById("runDay");
   const fasting = document.getElementById("fasting");
   const noAnchor = document.getElementById("noAnchor");
@@ -877,18 +842,10 @@ function boot() {
   if (regenBtn) regenBtn.addEventListener("click", regenToday);
   if (completeBtn) completeBtn.addEventListener("click", completeWorkout);
   if (modeSel) modeSel.addEventListener("change", buildProgram);
-
   if (runDay) runDay.addEventListener("change", buildProgram);
   if (fasting) fasting.addEventListener("change", buildProgram);
   if (noAnchor) noAnchor.addEventListener("change", buildProgram);
   if (bandBase) bandBase.addEventListener("change", buildProgram);
-
-  if (ytBtn) ytBtn.addEventListener("click", ()=>{
-    const q = (ytQuery && ytQuery.value ? ytQuery.value.trim() : "");
-    if (!q) return;
-    const noA = !!document.getElementById("noAnchor")?.checked;
-    openYouTubeSearch(noA ? buildNoAnchorQuery(q) : q);
-  });
 
   updateStatusLine();
   updateLog();
