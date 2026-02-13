@@ -7,44 +7,47 @@
 
 <style>
 :root{
---bg:#0f1115; 
---panel:#151924; 
---text:#e8e8e8; 
---muted:#a8b0c0; 
---line:#2a3142;
---accent:#4da6ff; 
---ok:#25d366; 
---warn:#f5c542; 
---danger:#ff5c5c;
+  --bg:#0f1115; 
+  --panel:#151924; 
+  --text:#e8e8e8; 
+  --muted:#a8b0c0; 
+  --line:#2a3142;
+  --accent:#4da6ff; 
+  --ok:#25d366; 
+  --warn:#f5c542; 
+  --danger:#ff5c5c;
 }
 
 body{
-font-family:Arial,system-ui;
-background:var(--bg);
-color:var(--text);
-margin:0;
-padding:14px;
+  font-family:Arial,system-ui;
+  background:var(--bg);
+  color:var(--text);
+  margin:0;
+  padding:14px;
 }
 
 .card{
-background:var(--panel);
-border:1px solid var(--line);
-border-radius:10px;
-padding:10px;
-margin:10px auto;
-max-width:980px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px;
+  margin:10px auto;
+  max-width:980px;
 }
 
 .exercise{
-border:1px solid var(--line);
-border-radius:10px;
-padding:10px;
-margin:8px 0;
-background:#0b0d12;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px;
+  margin:8px 0;
+  background:#0b0d12;
 }
 
 button{cursor:pointer}
 .logBox{white-space:pre-wrap}
+.small{font-size:12px;color:var(--muted)}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
 </style>
 
 </head>
@@ -53,120 +56,138 @@ button{cursor:pointer}
 <h1>Workout 100</h1>
 
 <div class="card">
-Durata:
-<select id="mode">
-<option value="25">25 minuti</option>
-<option value="35">35 minuti</option>
-</select>
+  Durata:
+  <select id="mode">
+    <option value="25">25 minuti</option>
+    <option value="35">35 minuti</option>
+  </select>
 
-RPE:
-<select id="rpeGlobal">
-<option value="1">1 = facile</option>
-<option value="2" selected>2 = ok</option>
-<option value="3">3 = duro</option>
-</select>
+  RPE:
+  <select id="rpeGlobal">
+    <option value="1">1 = facile</option>
+    <option value="2" selected>2 = ok</option>
+    <option value="3">3 = duro</option>
+  </select>
 
-<button id="regenBtn">Rigenera (oggi)</button>
-<button id="completeBtn">Allenamento completato</button>
+  <button id="regenBtn">Rigenera (oggi)</button>
+  <button id="completeBtn">Allenamento completato</button>
 </div>
 
 <div class="card">
-<div id="program"></div>
+  <div id="program"></div>
 </div>
 
 <div class="card">
-<div class="logBox" id="logBox"></div>
+  <div class="logBox" id="logBox"></div>
 </div>
 
-<!-- 🔹 QUI carichi il motore tecnico -->
+<!-- 🔹 Motore tecnico opzionale -->
 <script src="studyEngine.js"></script>
 
-<!-- 🔹 QUI va il tuo codice principale -->
 <script>
+/* =========================================================
+   DB (exercises.json)
+   Atteso: esercizi.json con almeno { "training": [ {name, family, ...}, ... ] }
+   family consigliate: "upper" | "core" | "lower"
+========================================================= */
 let exerciseDB = null;
-
-// qui metti tutto il resto del tuo codice
-
-/* ==========================
-   DB
-========================== */
 
 async function loadDB() {
   try {
     const res = await fetch("exercises.json", { cache: "no-store" });
-
-    if (!res.ok) {
-      throw new Error("HTTP " + res.status);
-    }
+    if (!res.ok) throw new Error("HTTP " + res.status);
 
     exerciseDB = await res.json();
+
+    // Validazione minima
+    if (!exerciseDB || !Array.isArray(exerciseDB.training)) {
+      throw new Error("Struttura JSON errata: manca 'training' (array).");
+    }
 
     console.log("DB caricato correttamente");
     boot();
 
   } catch (err) {
-
     console.error("Errore caricamento exercises.json:", err);
-
     const programDiv = document.getElementById("program");
     if (programDiv) {
       programDiv.innerHTML =
-           "<b>Errore caricamento exercises.json</b><br>" + err.message;
+        "<b>Errore caricamento exercises.json</b><br><span class='small'>" +
+        (err && err.message ? err.message : String(err)) + "</span>";
     }
   }
 }
-/* ==========================
-   STORAGE
-========================== */
 
-const STORAGE_KEY = "workout100_v9";
+/* =========================================================
+   STORAGE
+========================================================= */
+const STORAGE_KEY = "workout100_v10";
+
+// fallback clone (iOS vecchi)
+function deepClone(obj){
+  if (typeof structuredClone === "function") return structuredClone(obj);
+  return JSON.parse(JSON.stringify(obj));
+}
 
 const DEFAULT_DATA = {
   startDate: new Date().toISOString().split("T")[0],
+
+  // chiave per stabilità giornaliera (include mode + regen)
   lastGeneratedKey: null,
-  dayPicks: null,
+  dayPicks: null, // array di nomi (o indici) degli esercizi scelti oggi
+
+  // rigenera nello stesso giorno senza perdere stabilità post-rigenera
+  regen: { date: null, n: 0 },
+
   completedDate: null,
   streak: 0,
+
+  // progressione per family
   prog: {
     upper: { band: 15, repIndex: 2 },
     core:  { band: 15, repIndex: 1 },
     lower: { band: 15, repIndex: 1 }
   },
-  history: {},
+
+  // anti-ripetizione per family (ultimi 12 nomi)
+  history: {
+    upper: [],
+    core: [],
+    lower: []
+  },
+
+  // sessioni salvate
   sessions: []
 };
-
-/* ---------- LOAD ---------- */
 
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-
-    if (!raw) {
-      return structuredClone(DEFAULT_DATA);
-    }
+    if (!raw) return deepClone(DEFAULT_DATA);
 
     const parsed = JSON.parse(raw);
 
-    // Merge sicuro per evitare campi mancanti
+    // merge sicuro
     return {
-      ...structuredClone(DEFAULT_DATA),
+      ...deepClone(DEFAULT_DATA),
       ...parsed,
+      regen: { ...deepClone(DEFAULT_DATA).regen, ...(parsed.regen || {}) },
       prog: {
-        ...structuredClone(DEFAULT_DATA.prog),
+        ...deepClone(DEFAULT_DATA).prog,
         ...(parsed.prog || {})
       },
-      history: parsed.history || {},
-      sessions: parsed.sessions || []
+      history: {
+        ...deepClone(DEFAULT_DATA).history,
+        ...(parsed.history || {})
+      },
+      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : []
     };
 
   } catch (e) {
     console.warn("Errore lettura localStorage, reset dati:", e);
-    return structuredClone(DEFAULT_DATA);
+    return deepClone(DEFAULT_DATA);
   }
 }
-
-/* ---------- SAVE ---------- */
 
 function saveData() {
   try {
@@ -176,32 +197,71 @@ function saveData() {
   }
 }
 
-/* ---------- INIT ---------- */
-
 let data = loadData();
 
-/* ==========================
+/* =========================================================
    UTILS
-========================== */
+========================================================= */
+const REPS_OPTIONS = [8,10,12,14,16,18,20];
+const BANDS = [15,25,35];
+const TEMPO = "2-1-2";
 
-const REPS_OPTIONS=[8,10,12,14,16,18,20];
-const BANDS=[15,25,35];
-const TEMPO="2-1-2";
+function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
+function today(){ return new Date().toISOString().split("T")[0]; }
+function daysBetween(d1,d2){ return Math.floor((new Date(d2)-new Date(d1)) / 86400000); }
 
-function clamp(n,min,max){return Math.max(min,Math.min(max,n));}
-function today(){return new Date().toISOString().split("T")[0];}
-function daysBetween(d1,d2){return Math.floor((new Date(d2)-new Date(d1))/86400000);}
+function mulberry32(a){
+  return function(){
+    var t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+function seedFromString(str){
+  let n = 0;
+  for(let i=0;i<str.length;i++) n = (n*31 + str.charCodeAt(i)) >>> 0;
+  return n;
+}
 
-/* ==========================
-   WORKOUT ENGINE
-========================== */
+// anti-ripetizione: evita ultimi 12 per family
+function getHist(fam){
+  return Array.isArray(data.history[fam]) ? data.history[fam] : [];
+}
+function setHist(fam, arr){
+  data.history[fam] = arr.slice(0,12);
+}
 
+// selezione deterministica + anti-ripetizione
+function pickFromListStable(list, count, seedKey, fam){
+  const rng = mulberry32(seedFromString(seedKey));
+  const hist = getHist(fam);
+
+  // preferisci quelli NON in history
+  let pool = list.filter(x => !hist.includes(x.name));
+  if (pool.length < count) pool = list.slice();
+
+  // shuffle deterministico
+  for(let i=pool.length-1;i>0;i--){
+    const j = Math.floor(rng()*(i+1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  const picked = pool.slice(0, count);
+
+  // aggiorna history
+  const newHist = [...picked.map(x=>x.name), ...hist].slice(0,12);
+  setHist(fam, newHist);
+
+  return picked;
+}
+
+/* =========================================================
+   WORKOUT ENGINE (progressione)
+========================================================= */
 const WorkoutEngine = {
 
-  /* -------- PROGRESSIONE -------- */
-
   getSuggested(data, family, mode) {
-
     const phase = Math.floor(daysBetween(data.startDate, today()) / 7) % 4;
     const p = data.prog[family] || { band: 15, repIndex: 2 };
 
@@ -227,6 +287,7 @@ const WorkoutEngine = {
     let bi = BANDS.indexOf(p.band);
     if (bi < 0) bi = 0;
 
+    // facile + target chiuso => alza reps, poi banda
     if (rpe === 1 && repsDone >= repsTarget) {
       if (p.repIndex < REPS_OPTIONS.length - 1) {
         p.repIndex++;
@@ -237,6 +298,7 @@ const WorkoutEngine = {
       }
     }
 
+    // duro + target fallito => scala
     if (rpe === 3 && repsDone < repsTarget) {
       if (p.repIndex > 0) {
         p.repIndex--;
@@ -249,39 +311,103 @@ const WorkoutEngine = {
 
     data.prog[family] = p;
   }
-
 };
 
-/* ==========================
-   BUILD PROGRAM
-========================== */
+/* =========================================================
+   BUILD PROGRAM (stabile per oggi + rigenera oggi)
+========================================================= */
+let picks = []; // array di esercizi (oggetti) della sessione
 
-let picks = [];
+function getRegenNonceForToday(){
+  if (data.regen.date !== today()) {
+    data.regen.date = today();
+    data.regen.n = 0;
+  }
+  return data.regen.n || 0;
+}
 
-/* -------- GENERAZIONE -------- */
+function regenToday(){
+  // incrementa nonce e forza nuova generazione per oggi
+  if (data.regen.date !== today()) {
+    data.regen.date = today();
+    data.regen.n = 0;
+  } else {
+    data.regen.n = (data.regen.n || 0) + 1;
+  }
+
+  data.lastGeneratedKey = null;
+  data.dayPicks = null;
+  saveData();
+  buildProgram();
+}
 
 function buildProgram() {
-
-  if (!exerciseDB || !exerciseDB.training) {
+  if (!exerciseDB || !Array.isArray(exerciseDB.training)) {
     console.error("exerciseDB non caricato o struttura errata");
     return;
   }
 
   const mode = document.getElementById("mode").value;
+  const nonce = getRegenNonceForToday();
 
-  // Numero esercizi dinamico
-  const targetCount = mode === "35" ? 7 : 5;
+  // target esercizi (puoi cambiare qui)
+  // 25 -> 10 esercizi, 35 -> 12 esercizi (focus upper)
+  const targetCount = mode === "35" ? 12 : 10;
 
-  // Random semplice ma stabile per sessione
-  picks = [...exerciseDB.training]
-    .sort(() => 0.5 - Math.random())
-    .slice(0, targetCount);
+  // distribuzione
+  const upperCount = mode === "35" ? 8 : 6;
+  const coreCount  = 2;
+  const lowerCount = targetCount - upperCount - coreCount; // 2
+
+  const key = `${today()}|${mode}|${nonce}`;
+  const currentKey = key;
+
+  // se già generato oggi con questa key => ricostruisci
+  if (data.lastGeneratedKey === currentKey && Array.isArray(data.dayPicks) && data.dayPicks.length > 0) {
+    // ricostruisci picks da nomi
+    const byName = new Map(exerciseDB.training.map(ex => [ex.name, ex]));
+    picks = data.dayPicks.map(n => byName.get(n)).filter(Boolean);
+    // se mismatch, rigenera
+    if (picks.length >= Math.min(5, targetCount)) {
+      renderProgram();
+      return;
+    }
+  }
+
+  // genera nuovo set deterministico + anti ripetizione
+  const all = exerciseDB.training.slice().map(ex => ({
+    ...ex,
+    family: (ex.family || "core").toLowerCase()
+  }));
+
+  const upperList = all.filter(ex => ex.family === "upper");
+  const coreList  = all.filter(ex => ex.family === "core");
+  const lowerList = all.filter(ex => ex.family === "lower");
+
+  // seedKey per family (stabile nel giorno + mode + nonce)
+  const pickedUpper = pickFromListStable(upperList, upperCount, currentKey + ":upper", "upper");
+  const pickedCore  = pickFromListStable(coreList,  coreCount,  currentKey + ":core",  "core");
+  const pickedLower = pickFromListStable(lowerList, lowerCount, currentKey + ":lower", "lower");
+
+  picks = [...pickedUpper, ...pickedCore, ...pickedLower];
+
+  // shuffle leggero deterministico per non avere tutti upper insieme
+  const rng = mulberry32(seedFromString(currentKey + ":mix"));
+  for(let i=picks.length-1;i>0;i--){
+    const j = Math.floor(rng()*(i+1));
+    [picks[i], picks[j]] = [picks[j], picks[i]];
+  }
+
+  data.lastGeneratedKey = currentKey;
+  data.dayPicks = picks.map(ex => ex.name);
+  saveData();
 
   renderProgram();
 }
 
-/* -------- RENDER -------- */
-
+/* =========================================================
+   RENDER
+========================================================= */
 function renderProgram() {
 
   const container = document.getElementById("program");
@@ -294,62 +420,52 @@ function renderProgram() {
 
   const mode = document.getElementById("mode").value;
 
-  picks.forEach(ex => {
+  picks.forEach((ex, idx) => {
 
-    const fam = ex.family || "core";
+    const fam = (ex.family || "core").toLowerCase();
     const sug = WorkoutEngine.getSuggested(data, fam, mode);
 
-    // Analisi tecnica tramite StudyEngine
+    // Analisi tecnica (se presente)
     let analysis = null;
     if (typeof StudyEngine !== "undefined" && StudyEngine.analyzeExercise) {
-      analysis = StudyEngine.analyzeExercise(ex);
+      try { analysis = StudyEngine.analyzeExercise(ex); } catch(e){ /* ignore */ }
     }
+
+    const yt = ex.link || ("https://www.youtube.com/results?search_query=" + encodeURIComponent(ex.name + " exercise tutorial"));
 
     container.innerHTML += `
       <div class="exercise">
         <b>${ex.name}</b><br>
 
         ${analysis ? `
-        Pattern: ${analysis.pattern}<br>
-        Carico rachide: ${analysis.spinalLoad}<br>
-        Evidenza: ${analysis.evidenceTag}<br>
-        ` : ""}
+          <span class="small">
+            Pattern: ${analysis.pattern}<br>
+            Carico rachide: ${analysis.spinalLoad}<br>
+            Evidenza: ${analysis.evidenceTag}<br>
+          </span>
+        ` : `<span class="small">Tempo: ${TEMPO}</span><br>`}
 
-        Banda: ${sug.band} kg<br>
-        Target reps: ${sug.reps}<br>
+        <span class="small">Family: ${fam}</span><br><br>
+
+        Banda: <b>${sug.band}</b> kg<br>
+        Target reps: <b>${sug.reps}</b><br>
 
         <select class="didReps">
-          ${REPS_OPTIONS.map(r =>
-            `<option ${r === sug.reps ? "selected" : ""}>${r}</option>`
-          ).join("")}
+          ${REPS_OPTIONS.map(r => `<option ${r === sug.reps ? "selected" : ""}>${r}</option>`).join("")}
         </select>
+
+        <div class="small" style="margin-top:8px">
+          <a href="${yt}" target="_blank" rel="noopener">Tutorial</a>
+        </div>
       </div>
     `;
-
   });
 
 }
-   function boot() {
-  // collega i bottoni
-  const regenBtn = document.getElementById("regenBtn");
-  const completeBtn = document.getElementById("completeBtn");
-  const modeSel = document.getElementById("mode");
 
-  if (regenBtn) regenBtn.addEventListener("click", buildProgram);
-  if (completeBtn) completeBtn.addEventListener("click", completeWorkout);
-  if (modeSel) modeSel.addEventListener("change", buildProgram);
-
-  // mostra log esistente (se presente)
-  updateLog();
-
-  // genera programma iniziale
-  buildProgram();
-}
-
-/* ==========================
+/* =========================================================
    COMPLETE
-========================== */
-
+========================================================= */
 function completeWorkout(){
 
   if (!picks || picks.length === 0) {
@@ -377,13 +493,11 @@ function completeWorkout(){
     if (!select) return;
 
     const repsDone = parseInt(select.value, 10);
-    const fam = ex.family || "core";
+    const fam = (ex.family || "core").toLowerCase();
     const sug = WorkoutEngine.getSuggested(data, fam, mode);
 
-    // Progressione
     WorkoutEngine.applyProgression(data, fam, repsDone, sug.reps, rpe);
 
-    // Salvataggio dettagliato
     sessionExercises.push({
       name: ex.name,
       family: fam,
@@ -394,7 +508,6 @@ function completeWorkout(){
 
   });
 
-  // Salva sessione completa
   data.sessions.push({
     date: today(),
     mode,
@@ -406,30 +519,45 @@ function completeWorkout(){
   updateLog();
 
   alert("Allenamento salvato.");
-
 }
-document.addEventListener("DOMContentLoaded", () => {
-  loadDB();
-});
 
-/* ==========================
+/* =========================================================
    LOG
-========================== */
-
+========================================================= */
 function updateLog(){
+  const box = document.getElementById("logBox");
+  if (!box) return;
 
   if (!data.sessions || data.sessions.length === 0) {
-    document.getElementById("logBox").innerText = "Nessuna sessione salvata.";
+    box.innerText = "Nessuna sessione salvata.";
     return;
   }
 
   const last = data.sessions[data.sessions.length - 1];
-
-  document.getElementById("logBox").innerText =
-    JSON.stringify(last, null, 2);
+  box.innerText = JSON.stringify(last, null, 2);
 }
+
+/* =========================================================
+   BOOT
+========================================================= */
+function boot() {
+  const regenBtn = document.getElementById("regenBtn");
+  const completeBtn = document.getElementById("completeBtn");
+  const modeSel = document.getElementById("mode");
+
+  if (regenBtn) regenBtn.addEventListener("click", regenToday);
+  if (completeBtn) completeBtn.addEventListener("click", completeWorkout);
+  if (modeSel) modeSel.addEventListener("change", () => {
+    // cambia mode => cambia key => nuovo programma stabile per quel mode
+    buildProgram();
+  });
+
+  updateLog();
+  buildProgram();
+}
+
+document.addEventListener("DOMContentLoaded", loadDB);
 </script>
 
-   
 </body>
 </html>
