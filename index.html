@@ -236,7 +236,7 @@ function currentWeekIndex(){
 }
 function fourWeekPhase(){ return currentWeekIndex() % 4; } // dato interno
 
-function getSuggested(family, mode){
+{
   const phase = fourWeekPhase(); // interno
   const p = data.prog[family] || {band:15, repIndex:2};
   let repIndex = p.repIndex;
@@ -249,7 +249,7 @@ function getSuggested(family, mode){
   return {band, reps: REPS_OPTIONS[repIndex], repIndex};
 }
 
-function applyProgression(family, repsDone, repsTarget, rpe){
+{
   let p = data.prog[family] || {band:15, repIndex:2};
   let bi = BANDS.indexOf(p.band); if(bi<0) bi=0;
 
@@ -272,7 +272,68 @@ function applyProgression(family, repsDone, repsTarget, rpe){
   }
   data.prog[family] = p;
 }
+/* =========================================================
+   WORKOUT ENGINE (logica pura, no DOM)
+========================================================= */
 
+const WorkoutEngine = {
+
+  getFamily(ex){
+    if(!ex) return "core";
+    if(ex.family === "upper") return "upper";
+    if(ex.family === "lower") return "lower";
+    return "core";
+  },
+
+  getSuggested(data, family, mode){
+    const phase = Math.floor(daysBetween(data.startDate, today())/7) % 4;
+    const p = data.prog[family] || {band:15, repIndex:2};
+
+    let repIndex = p.repIndex;
+    let band = p.band;
+
+    if(String(mode)==="35") repIndex++;
+    if(phase===1) repIndex++;
+    if(phase===3) repIndex--;
+
+    repIndex = clamp(repIndex, 0, REPS_OPTIONS.length-1);
+
+    return {
+      band,
+      reps: REPS_OPTIONS[repIndex],
+      repIndex
+    };
+  },
+
+  WorkoutEngine.applyProgression(data, family, repsDone, repsTarget, rpe){
+    let p = data.prog[family] || {band:15, repIndex:2};
+    let bi = BANDS.indexOf(p.band);
+    if(bi<0) bi=0;
+
+    if(rpe===1 && repsDone >= repsTarget){
+      if(p.repIndex < REPS_OPTIONS.length-1){
+        p.repIndex++;
+      } else if(bi < BANDS.length-1){
+        bi++;
+        p.band = BANDS[bi];
+        p.repIndex = 1;
+      }
+    }
+
+    if(rpe===3 && repsDone < repsTarget){
+      if(p.repIndex > 0){
+        p.repIndex--;
+      } else if(bi > 0){
+        bi--;
+        p.band = BANDS[bi];
+        p.repIndex = 1;
+      }
+    }
+
+    data.prog[family] = p;
+  }
+
+};
 /* ==========================
    BUILD DAY PROGRAM (9–15) + METABOLICO
 ========================== */
@@ -400,7 +461,7 @@ function renderProgram(){
   container.innerHTML += `<div class="sectionTitle">1) Mobilità / Attivazione</div>`;
   picks.mobility_activation.forEach(ex=>{
     const fam = (ex.family==="upper") ? "upper" : (ex.family==="lower" ? "lower" : "core");
-    const sug = getSuggested(fam, mode);
+    const sug = WorkoutEngine.getSuggested(data, fam, mode);
     container.innerHTML += exerciseHTML(ex, sug);
   });
 
@@ -415,7 +476,7 @@ function renderProgram(){
     <div class="small">Esecuzione consigliata: <b>${cycles} cicli</b> (giro completo) • pausa solo tra cicli (30–60s).</div>`;
   picks.training.forEach(ex=>{
     const fam = (ex.family==="upper") ? "upper" : (ex.family==="lower" ? "lower" : "core");
-    const sug = getSuggested(fam, mode);
+    const sug = WorkoutEngine.getSuggested(data, fam, mode);
     container.innerHTML += exerciseHTML(ex, sug);
   });
 
@@ -423,7 +484,7 @@ function renderProgram(){
     <div class="small">Tecnico, controllato. Se sei “scarico” resta su upper+core.</div>`;
   picks.metabolic.forEach(ex=>{
     const fam = (ex.family==="upper") ? "upper" : (ex.family==="lower" ? "lower" : "core");
-    const sug = getSuggested(fam, mode);
+    const sug = WorkoutEngine.getSuggested(data, fam, mode);
     container.innerHTML += exerciseHTML(ex, sug);
   });
 
@@ -474,7 +535,7 @@ function completeWorkout(){
 
     const ex = findExerciseByName(name);
     const fam = (ex?.family==="upper") ? "upper" : (ex?.family==="lower" ? "lower" : "core");
-    const sug = getSuggested(fam, mode);
+    const sug = WorkoutEngine.getSuggested(data, fam, mode);
 
     picksLog.push({
       name,
@@ -489,7 +550,7 @@ function completeWorkout(){
 
     familyCounts[fam] = (familyCounts[fam]||0)+1;
 
-    applyProgression(fam, repsDone, sug.reps, rpe);
+    WorkoutEngine.applyProgression;fam, repsDone, sug.reps, rpe);
   });
 
   const session = {
