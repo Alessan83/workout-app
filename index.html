@@ -98,7 +98,7 @@ history:{},
 sessions:[]
 };
 
-function loadData(){
+function loadData(){}
 try{
 const raw=localStorage.getItem(STORAGE_KEY);
 if(!raw) return structuredClone(DEFAULT_DATA);
@@ -106,7 +106,6 @@ const parsed=JSON.parse(raw);
 return {...structuredClone(DEFAULT_DATA),...parsed};
 }catch{
 return structuredClone(DEFAULT_DATA);
-}
 }
 
 function saveData(){
