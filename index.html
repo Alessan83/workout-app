@@ -334,34 +334,66 @@ function renderProgram() {
   });
 
 }
-
 /* ==========================
    COMPLETE
 ========================== */
 
 function completeWorkout(){
 
-const mode=document.getElementById("mode").value;
-const rpe=parseInt(document.getElementById("rpeGlobal").value,10);
+  if (!picks || picks.length === 0) {
+    alert("Nessun esercizio da salvare.");
+    return;
+  }
 
-const exEls=document.querySelectorAll(".exercise");
+  const mode = document.getElementById("mode").value;
+  const rpe = parseInt(document.getElementById("rpeGlobal").value, 10);
 
-exEls.forEach((el,i)=>{
+  if (isNaN(rpe)) {
+    alert("RPE non valido.");
+    return;
+  }
 
-const repsDone=parseInt(el.querySelector(".didReps").value,10);
-const ex=picks[i];
-const fam=ex.family||"core";
-const sug=WorkoutEngine.getSuggested(data,fam,mode);
+  const exEls = document.querySelectorAll(".exercise");
+  const sessionExercises = [];
 
-WorkoutEngine.applyProgression(data,fam,repsDone,sug.reps,rpe);
+  exEls.forEach((el, i) => {
 
-});
+    const ex = picks[i];
+    if (!ex) return;
 
-data.sessions.push({date:today(),mode});
-saveData();
-updateLog();
+    const select = el.querySelector(".didReps");
+    if (!select) return;
 
-alert("Allenamento salvato.");
+    const repsDone = parseInt(select.value, 10);
+    const fam = ex.family || "core";
+    const sug = WorkoutEngine.getSuggested(data, fam, mode);
+
+    // Progressione
+    WorkoutEngine.applyProgression(data, fam, repsDone, sug.reps, rpe);
+
+    // Salvataggio dettagliato
+    sessionExercises.push({
+      name: ex.name,
+      family: fam,
+      repsTarget: sug.reps,
+      repsDone,
+      band: sug.band
+    });
+
+  });
+
+  // Salva sessione completa
+  data.sessions.push({
+    date: today(),
+    mode,
+    rpe,
+    exercises: sessionExercises
+  });
+
+  saveData();
+  updateLog();
+
+  alert("Allenamento salvato.");
 
 }
 
@@ -370,28 +402,15 @@ alert("Allenamento salvato.");
 ========================== */
 
 function updateLog(){
-document.getElementById("logBox").innerText=
-JSON.stringify(data.prog,null,2);
+
+  if (!data.sessions || data.sessions.length === 0) {
+    document.getElementById("logBox").innerText = "Nessuna sessione salvata.";
+    return;
+  }
+
+  const last = data.sessions[data.sessions.length - 1];
+
+  document.getElementById("logBox").innerText =
+    JSON.stringify(last, null, 2);
 }
-
-/* ==========================
-   EVENTS
-========================== */
-
-document.getElementById("regenBtn").addEventListener("click",buildProgram);
-document.getElementById("completeBtn").addEventListener("click",completeWorkout);
-
-/* ==========================
-   BOOT
-========================== */
-
-function boot(){
-buildProgram();
-updateLog();
-}
-
-loadDB();
-
-</script>
-</body>
-</html>
+       
