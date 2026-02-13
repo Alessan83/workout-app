@@ -94,33 +94,32 @@ let exerciseDB = null;
    DB
 ========================== */
 
-let exerciseDB=null;
-async function loadDB(){}
-  try{
-    const res = await fetch("exercises.json",{cache:"no-store"});
+let exerciseDB = null;
 
-    if(!res.ok){
-      throw new Error("HTTP "+res.status);
+async function loadDB() {
+  try {
+    const res = await fetch("exercises.json", { cache: "no-store" });
+
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status);
     }
 
     exerciseDB = await res.json();
+
+    console.log("DB caricato correttamente");
     boot();
 
-  }catch(e){
-    console.error("Errore fetch:", e);
-    document.getElementById("program").innerHTML =
-      "<b>Errore caricamento exercises.json</b><br>"+e;
-  }
-{
-try{
-const res=await fetch("exercises.json",{cache:"no-store"});
-exerciseDB=await res.json();
-boot();
-}catch(e){
-document.getElementById("program").innerHTML="Errore caricamento exercises.json";
-}
-};
+  } catch (e) {
 
+    console.error("Errore caricamento exercises.json:", e);
+
+    const programDiv = document.getElementById("program");
+    if (programDiv) {
+      programDiv.innerHTML =
+        "<b>Errore caricamento exercises.json</b><br>" + e.message;
+    }
+  }
+}
 /* ==========================
    STORAGE
 ========================== */
