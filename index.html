@@ -200,110 +200,138 @@ function daysBetween(d1,d2){return Math.floor((new Date(d2)-new Date(d1))/864000
 /* ==========================
    WORKOUT ENGINE
 ========================== */
+
 const WorkoutEngine = {
 
-  getSuggested(data,family,mode){
+  /* -------- PROGRESSIONE -------- */
 
-    const phase=Math.floor(daysBetween(data.startDate,today())/7)%4;
-    const p=data.prog[family]||{band:15,repIndex:2};
+  getSuggested(data, family, mode) {
 
-    let repIndex=p.repIndex;
-    let band=p.band;
+    const phase = Math.floor(daysBetween(data.startDate, today()) / 7) % 4;
+    const p = data.prog[family] || { band: 15, repIndex: 2 };
 
-    if(mode==="35") repIndex++;
-    if(phase===1) repIndex++;
-    if(phase===3) repIndex--;
+    let repIndex = p.repIndex;
+    let band = p.band;
 
-    repIndex=clamp(repIndex,0,REPS_OPTIONS.length-1);
+    if (mode === "35") repIndex++;
+    if (phase === 1) repIndex++;
+    if (phase === 3) repIndex--;
+
+    repIndex = clamp(repIndex, 0, REPS_OPTIONS.length - 1);
 
     return {
       band,
-      reps:REPS_OPTIONS[repIndex],
+      reps: REPS_OPTIONS[repIndex],
       repIndex
     };
+  },
 
-  },   // ← virgola qui, NON };
+  applyProgression(data, family, repsDone, repsTarget, rpe) {
 
-  applyProgression(data,family,repsDone,repsTarget,rpe){
+    let p = data.prog[family] || { band: 15, repIndex: 2 };
+    let bi = BANDS.indexOf(p.band);
+    if (bi < 0) bi = 0;
 
-    let p=data.prog[family]||{band:15,repIndex:2};
-    let bi=BANDS.indexOf(p.band);
-    if(bi<0) bi=0;
-
-    if(rpe===1 && repsDone>=repsTarget){
-      if(p.repIndex<REPS_OPTIONS.length-1){
+    if (rpe === 1 && repsDone >= repsTarget) {
+      if (p.repIndex < REPS_OPTIONS.length - 1) {
         p.repIndex++;
-      }else if(bi<BANDS.length-1){
+      } else if (bi < BANDS.length - 1) {
         bi++;
-        p.band=BANDS[bi];
-        p.repIndex=1;
+        p.band = BANDS[bi];
+        p.repIndex = 1;
       }
     }
 
-    if(rpe===3 && repsDone<repsTarget){
-      if(p.repIndex>0){
+    if (rpe === 3 && repsDone < repsTarget) {
+      if (p.repIndex > 0) {
         p.repIndex--;
-      }else if(bi>0){
+      } else if (bi > 0) {
         bi--;
-        p.band=BANDS[bi];
-        p.repIndex=1;
+        p.band = BANDS[bi];
+        p.repIndex = 1;
       }
     }
 
-    data.prog[family]=p;
+    data.prog[family] = p;
   }
 
-}; 
+};
 
 /* ==========================
    BUILD PROGRAM
 ========================== */
 
-let picks=null;
+let picks = [];
 
-function buildProgram(){
+/* -------- GENERAZIONE -------- */
 
-const mode=document.getElementById("mode").value;
+function buildProgram() {
 
-picks=exerciseDB.training||[];
+  if (!exerciseDB || !exerciseDB.training) {
+    console.error("exerciseDB non caricato o struttura errata");
+    return;
+  }
 
-renderProgram();
+  const mode = document.getElementById("mode").value;
 
+  // Numero esercizi dinamico
+  const targetCount = mode === "35" ? 7 : 5;
+
+  // Random semplice ma stabile per sessione
+  picks = [...exerciseDB.training]
+    .sort(() => 0.5 - Math.random())
+    .slice(0, targetCount);
+
+  renderProgram();
 }
 
-function renderProgram(){
+/* -------- RENDER -------- */
 
-const analysis = StudyEngine.analyzeExercise(ex);
+function renderProgram() {
 
-container.innerHTML += `
-<div class="exercise">
-  <b>${ex.name}</b><br>
-  Pattern: ${analysis.pattern}<br>
-  Carico rachide: ${analysis.spinalLoad}<br>
-  Evidenza: ${analysis.evidenceTag}
-</div>
-`;
-const mode=document.getElementById("mode").value;
-const container=document.getElementById("program");
-container.innerHTML="";
+  const container = document.getElementById("program");
+  container.innerHTML = "";
 
-picks.forEach(ex=>{
+  if (!picks || picks.length === 0) {
+    container.innerHTML = "<b>Nessun esercizio disponibile</b>";
+    return;
+  }
 
-const fam=ex.family||"core";
-const sug=WorkoutEngine.getSuggested(data,fam,mode);
+  const mode = document.getElementById("mode").value;
 
-container.innerHTML+=`
-<div class="exercise">
-<b>${ex.name}</b><br>
-Banda: ${sug.band} kg<br>
-Target reps: ${sug.reps}<br>
-<select class="didReps">
-${REPS_OPTIONS.map(r=>`<option ${r===sug.reps?"selected":""}>${r}</option>`).join("")}
-</select>
-</div>
-`;
+  picks.forEach(ex => {
 
-});
+    const fam = ex.family || "core";
+    const sug = WorkoutEngine.getSuggested(data, fam, mode);
+
+    // Analisi tecnica tramite StudyEngine
+    let analysis = null;
+    if (typeof StudyEngine !== "undefined" && StudyEngine.analyzeExercise) {
+      analysis = StudyEngine.analyzeExercise(ex);
+    }
+
+    container.innerHTML += `
+      <div class="exercise">
+        <b>${ex.name}</b><br>
+
+        ${analysis ? `
+        Pattern: ${analysis.pattern}<br>
+        Carico rachide: ${analysis.spinalLoad}<br>
+        Evidenza: ${analysis.evidenceTag}<br>
+        ` : ""}
+
+        Banda: ${sug.band} kg<br>
+        Target reps: ${sug.reps}<br>
+
+        <select class="didReps">
+          ${REPS_OPTIONS.map(r =>
+            `<option ${r === sug.reps ? "selected" : ""}>${r}</option>`
+          ).join("")}
+        </select>
+      </div>
+    `;
+
+  });
 
 }
 
