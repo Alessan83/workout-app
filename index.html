@@ -106,9 +106,9 @@ async function loadDB() {
     console.log("DB caricato correttamente");
     boot();
 
-  } catch (e) {
+  } catch (err) {
 
-    console.error("Errore caricamento exercises.json:", e);
+    console.error("Errore caricamento exercises.json:", err);
 
     const programDiv = document.getElementById("program");
     if (programDiv) {
