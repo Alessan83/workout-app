@@ -129,62 +129,60 @@ function daysBetween(d1,d2){return Math.floor((new Date(d2)-new Date(d1))/864000
 /* ==========================
    WORKOUT ENGINE
 ========================== */
+const WorkoutEngine = {
 
-const WorkoutEngine={
+  getSuggested(data,family,mode){
 
-getSuggested(data,family,mode){
+    const phase=Math.floor(daysBetween(data.startDate,today())/7)%4;
+    const p=data.prog[family]||{band:15,repIndex:2};
 
-const phase=Math.floor(daysBetween(data.startDate,today())/7)%4;
-const p=data.prog[family]||{band:15,repIndex:2};
+    let repIndex=p.repIndex;
+    let band=p.band;
 
-let repIndex=p.repIndex;
-let band=p.band;
+    if(mode==="35") repIndex++;
+    if(phase===1) repIndex++;
+    if(phase===3) repIndex--;
 
-if(mode==="35") repIndex++;
-if(phase===1) repIndex++;
-if(phase===3) repIndex--;
+    repIndex=clamp(repIndex,0,REPS_OPTIONS.length-1);
 
-repIndex=clamp(repIndex,0,REPS_OPTIONS.length-1);
+    return {
+      band,
+      reps:REPS_OPTIONS[repIndex],
+      repIndex
+    };
 
-return{
-band,
-reps:REPS_OPTIONS[repIndex],
-repIndex
-}
+  },   // ← virgola qui, NON };
 
-};
+  applyProgression(data,family,repsDone,repsTarget,rpe){
 
-applyProgression(data,family,repsDone,repsTarget,rpe){
+    let p=data.prog[family]||{band:15,repIndex:2};
+    let bi=BANDS.indexOf(p.band);
+    if(bi<0) bi=0;
 
-let p=data.prog[family]||{band:15,repIndex:2};
-let bi=BANDS.indexOf(p.band);
-if(bi<0) bi=0;
+    if(rpe===1 && repsDone>=repsTarget){
+      if(p.repIndex<REPS_OPTIONS.length-1){
+        p.repIndex++;
+      }else if(bi<BANDS.length-1){
+        bi++;
+        p.band=BANDS[bi];
+        p.repIndex=1;
+      }
+    }
 
-if(rpe===1 && repsDone>=repsTarget){
-if(p.repIndex<REPS_OPTIONS.length-1){
-p.repIndex++;
-}else if(bi<BANDS.length-1){
-bi++;
-p.band=BANDS[bi];
-p.repIndex=1;
-}
-}
+    if(rpe===3 && repsDone<repsTarget){
+      if(p.repIndex>0){
+        p.repIndex--;
+      }else if(bi>0){
+        bi--;
+        p.band=BANDS[bi];
+        p.repIndex=1;
+      }
+    }
 
-if(rpe===3 && repsDone<repsTarget){
-if(p.repIndex>0){
-p.repIndex--;
-}else if(bi>0){
-bi--;
-p.band=BANDS[bi];
-p.repIndex=1;
-}
-}
+    data.prog[family]=p;
+  }
 
-data.prog[family]=p;
-
-}
-
-};
+}; 
 
 /* ==========================
    BUILD PROGRAM
