@@ -131,46 +131,72 @@ function buildExerciseStructure(ex, structure){
 // ------------------------------------
 // GENERATE SESSION
 // ------------------------------------
-
 function generateSession(exerciseDB, options){
 
   const studyData = StudyEngine.load();
-
   const week = studyData.week;
 
   const structure =
     decideStructure(week, options.sessionMinutes);
 
+  const targetTotal = options.sessionMinutes * 60;
+
+  const strengthTarget =
+    targetTotal -
+    GLOBAL.warmupTime -
+    GLOBAL.mobilityTime -
+    GLOBAL.coreTime;
+
   const context = {
     runDay: options.runDay || false,
     fasting: options.fasting || false,
     sets: structure.sets,
-    band: options.band || 25,
-    targetExerciseCount: 5
+    band: options.band || 25
   };
-
-  const biomechSession =
-    BiomechanicalEngine.generateSession(exerciseDB, context);
 
   let exercises = [];
   let totalStrengthTime = 0;
 
-  biomechSession.exercises.forEach(ex => {
+  let attempts = 0;
+
+  while(totalStrengthTime < strengthTarget && attempts < 50){
+
+    attempts++;
+
+    const biomechSession =
+      BiomechanicalEngine.generateSession(exerciseDB,{
+        ...context,
+        targetExerciseCount:1
+      });
+
+    let ex = biomechSession.exercises[0];
 
     let built =
       buildExerciseStructure(ex, structure);
 
+    // Evita duplicati
+    if(exercises.find(e => e.name === built.name)){
+      continue;
+    }
+
+    // Se supera troppo, riduci set
+    if(totalStrengthTime + built.totalTime > strengthTarget){
+
+      if(built.sets > 2){
+        built.sets -=1;
+        built.totalTime = calculateDynamicTime(
+          built.sets,
+          built.reps,
+          built.rest
+        );
+      }
+    }
+
     totalStrengthTime += built.totalTime;
-
     exercises.push(built);
-  });
+  }
 
-  // Calcolo tempo totale sessione
-
-  let targetTotal =
-    options.sessionMinutes * 60;
-
-  let totalTime =
+  const totalTime =
     GLOBAL.warmupTime +
     GLOBAL.mobilityTime +
     totalStrengthTime +
@@ -185,6 +211,7 @@ function generateSession(exerciseDB, options){
     strengthTime: totalStrengthTime,
     totalTime,
     targetTotal,
+    delta: targetTotal - totalTime,
     exercises
   };
 }
