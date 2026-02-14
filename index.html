@@ -15,6 +15,7 @@
   --accent:#4da6ff; 
   --ok:#25d366; 
   --warn:#f5c542; 
+  --danger:#ff5c5c;
 }
 
 body{
@@ -22,7 +23,7 @@ body{
   background:var(--bg);
   color:var(--text);
   margin:0;
-  padding:14px;
+  padding:12px;
 }
 
 .card{
@@ -34,6 +35,35 @@ body{
   max-width:900px;
 }
 
+.controls{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:flex-end;
+}
+
+.field{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+label{
+  font-size:12px;
+  color:var(--muted);
+}
+
+select,button{
+  border:1px solid var(--line);
+  background:#0b0d12;
+  color:var(--text);
+  border-radius:8px;
+  padding:8px;
+  font-size:14px;
+}
+
+button{cursor:pointer}
+
 .exercise{
   border:1px solid var(--line);
   border-radius:10px;
@@ -42,16 +72,8 @@ body{
   background:#0b0d12;
 }
 
-button,select{
-  border:1px solid var(--line);
-  background:#0b0d12;
-  color:var(--text);
-  border-radius:8px;
-  padding:8px;
-}
-
 .sectionTitle{
-  margin:14px 0 6px;
+  margin-top:14px;
   font-weight:700;
 }
 
@@ -62,7 +84,7 @@ button,select{
 }
 
 @media(max-width:600px){
-  select,button{width:100%;margin-top:6px}
+  select,button{width:100%}
 }
 </style>
 </head>
@@ -71,168 +93,178 @@ button,select{
 <h2>Workout 100</h2>
 
 <div class="card">
-  <div>
-    Durata:
-    <select id="mode">
-      <option value="25">25 minuti</option>
-      <option value="35">35 minuti</option>
-    </select>
+  <div class="controls">
+    <div class="field">
+      <label>Durata</label>
+      <select id="mode">
+        <option value="25">25 minuti</option>
+        <option value="35">35 minuti</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>RPE finale</label>
+      <select id="rpe">
+        <option value="1">1 = facile</option>
+        <option value="2" selected>2 = ok</option>
+        <option value="3">3 = duro</option>
+      </select>
+    </div>
+
+    <button id="btnGen">Genera sessione</button>
+    <button id="btnComplete">Allenamento completato</button>
   </div>
 
-  <div style="margin-top:10px">
-    RPE finale:
-    <select id="rpe">
-      <option value="1">1 = facile</option>
-      <option value="2" selected>2 = ok</option>
-      <option value="3">3 = duro</option>
-    </select>
-  </div>
-
-  <div style="margin-top:10px">
-    <button onclick="generate()">Genera sessione</button>
-    <button onclick="complete()">Allenamento completato</button>
-  </div>
-
-  <div id="status" style="margin-top:10px;font-size:12px;color:var(--muted)"></div>
+  <div id="statusLine" class="small" style="margin-top:8px"></div>
 </div>
 
-<div class="card" id="program"></div>
+<div class="card" id="programArea"></div>
 
 <div class="card">
-  <pre id="log" style="font-size:11px;color:var(--muted)"></pre>
+  <pre id="logArea" class="small"></pre>
 </div>
 
-<script src="exercises.json"></script>
+<!-- SCRIPT ORDER (critical) -->
 <script src="trainingKnowledge.js"></script>
+<script src="equipmentEngine.js"></script>
 <script src="biomechanicalEngine.js"></script>
 <script src="studyEngine.js"></script>
 <script src="sessionengine1.js"></script>
 
 <script>
-
+let exerciseDB = null;
 let currentSession = null;
+
+// load JSON DB
+async function loadDB(){
+  try {
+    const res = await fetch("exercises.json",{cache:"no-store"});
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    exerciseDB = await res.json();
+    document.getElementById("statusLine").innerText = "DB caricato ✔";
+  } catch(e) {
+    document.getElementById("statusLine").innerText = "Errore DB ❌";
+    console.error("Errore fetch exercises.json:",e);
+  }
+}
 
 function today(){
   return new Date().toISOString().split("T")[0];
 }
 
-function generate(){
-
-  const minutes = parseInt(document.getElementById("mode").value,10);
-
-  if(!window.SessionEngine){
-    alert("SessionEngine non caricato");
+function genSession(){
+  if(!exerciseDB){
+    alert("DB non caricato!");
     return;
   }
+  if(typeof SessionEngine !== "object"){
+    alert("SessionEngine non trovato");
+    return;
+  }
+
+  const mode = parseInt(document.getElementById("mode").value,10);
 
   currentSession = SessionEngine.generateSession(exerciseDB,{
-    sessionMinutes: minutes
+    sessionMinutes: mode,
+    runDay:false,
+    fasting:false
   });
 
-  render(currentSession);
-
-  document.getElementById("status").innerText =
-    "Sessione generata per oggi: " + today();
+  renderSession();
+  document.getElementById("statusLine").innerText =
+    "Sessione generata: "+today()+" • "+mode+" min";
 }
 
-function render(session){
+function renderSession(){
+  const area=document.getElementById("programArea");
+  area.innerHTML="";
 
-  const container = document.getElementById("program");
-  container.innerHTML = "";
+  if(!currentSession)return;
 
-  if(!session) return;
-
-  renderBlock("Riscaldamento",session.warm,container);
-  renderBlock("Mobilità",session.mobility,container);
-  renderBlock("Forza",session.strength,container,true);
+  renderBlock("Riscaldamento",currentSession.warm,area);
+  renderBlock("Mobilità",currentSession.mobility,area);
+  renderBlock("Forza",currentSession.strength,area);
 }
 
-function renderBlock(title,list,container,isStrength=false){
+function renderBlock(title,list,container){
+  if(!Array.isArray(list) || list.length===0) return;
+  container.innerHTML += `<div class="sectionTitle">${title} (${list.length})</div>`;
 
-  if(!list || !list.length) return;
-
-  container.innerHTML += `<div class="sectionTitle">${title}</div>`;
-
-  list.forEach(ex=>{
-
-    const cues = collectCues(ex);
-
-    let html = `<div class="exercise">
-      <b>${ex.name}</b>`;
-
-    if(isStrength && ex.prescription){
-      html += `<div>Rx: ${ex.prescription.cycles || "-"} cicli × ${ex.prescription.reps || "-"} reps</div>`;
-      if(ex.prescription.band)
-        html += `<div>Banda: ${ex.prescription.band}</div>`;
-    }
-
-    if(cues.length){
-      html += `<div class="cues">${cues.join("<br>")}</div>`;
-    }
-
-    html += `</div>`;
-
-    container.innerHTML += html;
+  list.forEach((ex,i)=>{
+    container.innerHTML += renderExercise(ex,i);
   });
 }
 
-function collectCues(ex){
+function renderExercise(ex){
+  const cues = [
+    ...(typeof BiomechanicalEngine==="object" && BiomechanicalEngine.getCues ? BiomechanicalEngine.getCues(ex):[]),
+    ...(typeof StudyEngine==="object" && StudyEngine.getCues ? StudyEngine.getCues(ex):[]),
+    ...(ex.cues || [])
+  ];
 
-  let cues = [];
+  const uniques = [...new Set(cues)];
 
-  try{
-    if(window.BiomechanicalEngine && BiomechanicalEngine.getCues){
-      cues = cues.concat(BiomechanicalEngine.getCues(ex) || []);
-    }
-  }catch(e){}
+  let html=`<div class="exercise"><b>${ex.name}</b>`;
 
-  try{
-    if(window.StudyEngine && StudyEngine.getCues){
-      cues = cues.concat(StudyEngine.getCues(ex) || []);
-    }
-  }catch(e){}
+  if(ex.prescription){
+    html += `<div>Rx: ${ex.prescription.cycles}× ${ex.prescription.reps}</div>`;
+    if(ex.prescription.band)
+      html += `<div>Banda: ${ex.prescription.band}</div>`;
+  }
 
-  if(ex.cues) cues = cues.concat(ex.cues);
+  if(uniques.length){
+    html += `<div class="cues">• ${uniques.join("<br>• ")}</div>`;
+  }
 
-  return [...new Set(cues)];
+  html += "</div>";
+  return html;
 }
 
-function complete(){
-
+function completeSession(){
   if(!currentSession){
-    alert("Nessuna sessione generata");
+    alert("Genera una sessione prima!");
     return;
   }
 
-  const rpe = parseInt(document.getElementById("rpe").value,10);
+  const rpe=parseInt(document.getElementById("rpe").value,10);
 
-  const payload = {
+  const payload={
     date: today(),
-    session: currentSession,
-    rpe: rpe
+    rpe: rpe,
+    mode: document.getElementById("mode").value,
+    session: currentSession
   };
 
+  console.log("complete payload:",payload);
+
   try{
-    if(window.StudyEngine && StudyEngine.completeSession)
+    if(typeof StudyEngine==="object" && StudyEngine.completeSession)
       StudyEngine.completeSession(payload);
-  }catch(e){}
+  }catch(e){console.warn(e)}
 
   try{
-    if(window.BiomechanicalEngine && BiomechanicalEngine.completeSession)
+    if(typeof BiomechanicalEngine==="object" && BiomechanicalEngine.completeSession)
       BiomechanicalEngine.completeSession(payload);
-  }catch(e){}
+  }catch(e){console.warn(e)}
 
   try{
-    if(window.SessionEngine && SessionEngine.completeSession)
+    if(typeof SessionEngine==="object" && SessionEngine.completeSession)
       SessionEngine.completeSession(payload);
-  }catch(e){}
+  }catch(e){console.warn(e)}
 
-  document.getElementById("log").innerText =
+  document.getElementById("logArea").innerText =
     JSON.stringify(payload,null,2);
-
-  alert("Sessione salvata");
+  document.getElementById("statusLine").innerText =
+    "Allenamento completato ✔";
 }
 
+// events
+document.getElementById("btnGen").addEventListener("click",genSession);
+document.getElementById("btnComplete").addEventListener("click",completeSession);
+
+// load DB on start
+loadDB();
 </script>
+
 </body>
 </html>
