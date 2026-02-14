@@ -1,24 +1,12 @@
 /* =========================================================
-   workoutCoordinator.js — COORDINATOR v4.1 (aligned)
-   Compatible with:
-     - exercises.json  (movement DB loaded elsewhere into `exerciseDB`)
-     - trainingKnowledge.js (global TrainingKnowledge)
-     - studyEngine.js (global StudyEngine)
-     - biomechanicalEngine.js (global BiomechanicalEngine)
-     - sessionengine1.js (global SessionEngine)
-
-   Responsibilities (ONLY):
-     - Read UI flags (minutes/runDay/fasting/rpe3/noAnchors)
-     - Get deterministic today session (SessionEngine.getOrCreateTodaySession)
-     - Render session to UI (minimal hooks, no styling opinions)
-     - On "Allenamento completato" collect inputs and call SessionEngine.completeWorkout
-     - Maintain streak box (single square) using StudyEngine state
-     - Provide Export JSON blob for future ChatGPT analysis
-
-   Notes:
-     - No progression logic here.
-     - No biomechanics logic here.
-     - No saving unless user presses "Allenamento completato".
+   workoutCoordinator.js — COORDINATOR v4.2
+   ---------------------------------------------------------
+   Bridge UI ↔ SessionEngine
+   Aggiornato per EquipmentEngine:
+     - longBand
+     - clipBand
+     - miniLoop
+     - bodyweight (dynamic / plyometric / isometric)
 ========================================================= */
 
 /* global StudyEngine, SessionEngine */
@@ -26,7 +14,6 @@
 const WorkoutCoordinator = (function () {
   "use strict";
 
-  // -------------- DOM helpers --------------
   const $ = (id) => document.getElementById(id);
 
   function safeInt(v, fb = 0) {
@@ -38,90 +25,153 @@ const WorkoutCoordinator = (function () {
     return !!v;
   }
 
-  // -------------- State --------------
   let exerciseDB = null;
   let currentSession = null;
 
-  // -------------- UI flag reading --------------
+  /* =====================================================
+     READ UI FLAGS
+  ===================================================== */
+
   function readFlagsFromUI() {
-    // You can map these IDs to your real HTML controls.
-    // If a control is missing, defaults are applied.
-    const minutes = safeInt($("modeMinutes")?.value, 25); // expected: 25/30/35
+    const minutes = safeInt($("modeMinutes")?.value, 25);
     const runDay = safeBool($("flagRunDay")?.checked);
     const fasting = safeBool($("flagFasting")?.checked);
-    const rpe3 = safeInt($("rpe3")?.value, 2); // 1..3
-    const noAnchors = $("flagNoAnchors") ? safeBool($("flagNoAnchors")?.checked) : true;
+    const rpe3 = safeInt($("rpe3")?.value, 2);
+    const noAnchors = $("flagNoAnchors")
+      ? safeBool($("flagNoAnchors")?.checked)
+      : true;
 
     return { minutes, runDay, fasting, rpe3, noAnchors };
   }
 
-  // -------------- Rendering --------------
-  // Minimal renderer: expects a container element with id "sessionBox"
-  // You can replace this with your UI code; keep data model unchanged.
+  /* =====================================================
+     LOAD RENDERING
+  ===================================================== */
+
+  function renderLoad(it) {
+
+    if (it.loadType === "longBand")
+      return ` — Banda lunga ${it.bandKg}kg`;
+
+    if (it.loadType === "clipBand")
+      return ` — Banda moschettone ${it.bandKg}kg`;
+
+    if (it.loadType === "miniLoop")
+      return ` — Miniloop ${it.miniLoop}`;
+
+    if (it.loadType === "bodyweight") {
+      if (it.bodyweightSubtype === "plyometric")
+        return " — Corpo libero (pliometrico)";
+      if (it.bodyweightSubtype === "dynamic")
+        return " — Corpo libero (dinamico)";
+      if (it.bodyweightSubtype === "isometric")
+        return " — Corpo libero (isometrico)";
+      return " — Corpo libero";
+    }
+
+    return "";
+  }
+
+  /* =====================================================
+     SESSION RENDERING
+  ===================================================== */
+
   function renderSession(session) {
+
     const box = $("sessionBox");
     if (!box) return;
 
-    const b = session.blocks;
+    const b = session.blocks || {};
 
     function renderItem(it, idx) {
-      const unit = it.unit === "seconds" ? `${it.seconds || 0}s` : `${it.reps || 0} reps`;
-      const band = it.band ? ` — banda ${it.band}` : "";
+
+      const unit =
+        it.unit === "seconds"
+          ? `${it.seconds || 0}s`
+          : `${it.reps || 0} reps`;
+
       const sets = it.sets ? `${it.sets} set` : "1 set";
       const rest = it.restSec ? ` — rest ${it.restSec}s` : "";
-      const cue = (it.cues && it.cues.length) ? `\n• ${it.cues.slice(0, 3).join("\n• ")}` : "";
-      const warn = (it.warnings && it.warnings.length) ? `\n⚠ ${it.warnings.slice(0, 2).join(" | ")}` : "";
+      const load = renderLoad(it);
+
+      const cue = (it.cues?.length)
+        ? `\n• ${it.cues.slice(0, 3).join("\n• ")}`
+        : "";
+
+      const warn = (it.warnings?.length)
+        ? `\n⚠ ${it.warnings.slice(0, 2).join(" | ")}`
+        : "";
 
       return `
-<div class="exRow" data-family="${it.family || it.kind || ""}">
+<div class="exRow" data-family="${it.family || ""}">
   <div><b>${idx + 1}. ${it.name}</b></div>
-  <div>${sets} — ${unit}${band}${rest}</div>
+  <div>${sets} — ${unit}${load}${rest}</div>
   <div style="opacity:.85; font-size:.92em; white-space:pre-line">${cue}${warn}</div>
 </div>`;
     }
 
     function section(title, arr) {
       if (!arr || !arr.length) return "";
-      const html = arr.map(renderItem).join("\n");
-      return `<div class="sec"><h3>${title}</h3>${html}</div>`;
+      return `<div class="sec">
+        <h3>${title}</h3>
+        ${arr.map(renderItem).join("")}
+      </div>`;
     }
 
     const meta = session.meta || {};
+
     const head = `
 <div class="sec">
-  <div><b>Oggi</b>: ${meta.dayKey} — ${meta.minutes}’ — RPE ${meta.rpe3} ${meta.deload ? "— DELOAD" : ""}</div>
+  <div><b>Oggi</b>: ${meta.dayKey} — ${meta.minutes}’ — RPE ${meta.rpe3}
+  ${meta.deload ? " — DELOAD" : ""}</div>
   <div style="opacity:.85">Tempo stimato: ${meta.estimatedMinutes}’</div>
-  ${(meta.sessionWarnings && meta.sessionWarnings.length) ? `<div style="opacity:.9">⚠ ${meta.sessionWarnings.slice(0,3).join(" | ")}</div>` : ""}
+  ${(meta.sessionWarnings?.length)
+    ? `<div style="opacity:.9">⚠ ${meta.sessionWarnings.slice(0,3).join(" | ")}</div>`
+    : ""}
 </div>`;
 
     box.innerHTML =
       head +
-      section("Riscaldamento", b.warmup) +
-      section("Mobilità", b.mobility) +
-      section("Forza (3 esercizi)", b.strength) +
-      section("Core / Controllo", b.coreControl) +
-      section("Cooldown (respiro)", b.cooldown);
+      section("Forza", b.strength);
 
-    // Also render input controls for reps done (dropdown) + technique OK toggles
     renderCompletionInputs(session);
   }
 
+  /* =====================================================
+     COMPLETION UI
+  ===================================================== */
+
   function renderCompletionInputs(session) {
+
     const area = $("completeBox");
     if (!area) return;
 
-    const strength = session.blocks.strength || [];
+    const strength = session.blocks?.strength || [];
+
     const repOptions = [8, 10, 12, 14, 16, 18, 20]
       .map(x => `<option value="${x}">${x}</option>`)
       .join("");
 
-    // Build rows for pull/push/posterior based on `family`
-    const rowFor = (fam, label) => {
+    function rowFor(fam, label) {
+
       const ex = strength.find(x => x.family === fam);
       if (!ex) return "";
+
+      const loadInfo = renderLoad(ex);
+
+      if (ex.unit === "seconds") {
+        return `
+<div class="doneRow">
+  <div><b>${label}</b>: ${ex.name}</div>
+  <div style="opacity:.8">Carico: ${loadInfo}</div>
+  <div>Durata eseguita: ${ex.seconds}s</div>
+</div>`;
+      }
+
       return `
 <div class="doneRow" data-family="${fam}">
   <div><b>${label}</b>: ${ex.name}</div>
+  <div style="opacity:.8">Carico: ${loadInfo}</div>
   <div>
     Reps fatte:
     <select id="done_${fam}">${repOptions}</select>
@@ -130,7 +180,7 @@ const WorkoutCoordinator = (function () {
     </label>
   </div>
 </div>`;
-    };
+    }
 
     area.innerHTML = `
 <div class="sec">
@@ -139,19 +189,25 @@ const WorkoutCoordinator = (function () {
   ${rowFor("push","PUSH")}
   ${rowFor("posterior","POSTERIOR")}
   <div style="margin-top:10px">
-    Note: <input id="done_notes" type="text" style="width:100%" placeholder="facoltativo" />
+    Note:
+    <input id="done_notes" type="text"
+      style="width:100%" placeholder="facoltativo" />
   </div>
 </div>`;
   }
 
-  // -------------- Streak (single square) --------------
+  /* =====================================================
+     STREAK
+  ===================================================== */
+
   function renderStreak() {
+
     const el = $("streakBox");
     if (!el || !StudyEngine) return;
 
     const st = StudyEngine.getState();
-    const dayKey = (st && st.lastCompletedDay) ? st.lastCompletedDay : "—";
-    const streak = (st && st.streak) ? st.streak : 0;
+    const dayKey = st?.lastCompletedDay || "—";
+    const streak = st?.streak || 0;
 
     el.innerHTML = `
 <div class="sec">
@@ -160,22 +216,30 @@ const WorkoutCoordinator = (function () {
 </div>`;
   }
 
-  // -------------- Main actions --------------
+  /* =====================================================
+     MAIN ACTIONS
+  ===================================================== */
+
   function ensureDBLoaded() {
-    if (!exerciseDB) throw new Error("exerciseDB not loaded in coordinator. Load exercises.json first.");
+    if (!exerciseDB)
+      throw new Error("exerciseDB not loaded in coordinator.");
   }
 
   function generateToday() {
     ensureDBLoaded();
     const flags = readFlagsFromUI();
-    currentSession = SessionEngine.getOrCreateTodaySession(exerciseDB, flags);
+    currentSession =
+      SessionEngine.getOrCreateTodaySession(exerciseDB, flags);
     renderSession(currentSession);
     renderStreak();
   }
 
   function completeWorkout() {
-    if (!currentSession) throw new Error("No current session. Generate first.");
-    const s = currentSession.blocks.strength || [];
+
+    if (!currentSession)
+      throw new Error("No current session.");
+
+    const s = currentSession.blocks?.strength || [];
 
     const pull = s.find(x => x.family === "pull");
     const push = s.find(x => x.family === "push");
@@ -197,41 +261,33 @@ const WorkoutCoordinator = (function () {
 
     const out = SessionEngine.completeWorkout(currentSession, payload);
 
-    // After completion: update streak + regenerate next session only on user request
     renderStreak();
 
-    // Optional: show export blob to a textarea if present
-    const exportBox = $("exportBox");
-    if (exportBox) exportBox.value = JSON.stringify(out.exportBlob, null, 2);
-
-    // Minimal feedback (avoid alerts if you prefer)
     const status = $("statusBox");
     if (status) status.textContent = "Allenamento salvato.";
+
+    const exportBox = $("exportBox");
+    if (exportBox && out.exportBlob)
+      exportBox.value = JSON.stringify(out.exportBlob, null, 2);
   }
 
   function exportJSON() {
     const blob = SessionEngine.exportJSON();
     const txt = JSON.stringify(blob, null, 2);
-
     const exportBox = $("exportBox");
     if (exportBox) exportBox.value = txt;
-
     return txt;
   }
 
-  // -------------- Public API --------------
-  return {
-    // set DB once loaded
-    setExerciseDB(db) {
-      exerciseDB = db;
-    },
+  /* =====================================================
+     PUBLIC API
+  ===================================================== */
 
-    // UI actions
+  return {
+    setExerciseDB(db) { exerciseDB = db; },
     generateToday,
     completeWorkout,
     exportJSON,
-
-    // for debugging
     getCurrentSession() { return currentSession; }
   };
 
