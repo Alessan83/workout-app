@@ -1,471 +1,281 @@
 // =======================================================
-// BIOMECHANICAL ENGINE v2.0
-// Coordinato con StudyEngine v3 + SessionEngine1
-// - Sicurezza rachide (L5-S1), hinge limit, stress budget
-// - Adattamento esercizi con appiglio -> varianti free
-// - Cues + warnings per esecuzione
+// BIOMECHANICAL ENGINE v2.1 (TrainingKnowledge-aligned)
+// - Reads rules from TrainingKnowledge (single source of truth)
+// - Normalizes dose type (reps vs seconds), fixes side plank
+// - No-anchor adaptations based on noAnchorRules
+// - Deterministic safety validation (no Math.random decisions here)
+// - Cues + warnings + session-level validation
 // =======================================================
 
-const BiomechanicalEngine = (function(){
+/* global TrainingKnowledge */
 
-// -------------------------------
-// CONFIG
-// -------------------------------
+const BiomechanicalEngine = (function () {
+  "use strict";
 
-const CFG = {
-  // budget stress per singola sessione (sessionEngine riempie tempo: qui limitiamo rischio)
-  maxSessionStress: 110,
-
-  // limite hinge (stacchi/hinge pattern) per sessione
-  maxHingePerSession: 2,
-
-  // vincolo posterior vs pull (simile a StudyEngine, ma applicato sulla sessione generata)
-  posteriorPullRatio: 1.2,
-
-  // fattori banda (coerenti con StudyEngine)
-  bandFactor: {15:1.0, 25:1.4, 35:1.8},
-
-  // se non hai ancoraggi: non scartare ma adattare
-  noAnchorsDefault: true,
-
-  // se fasting: riduce tolleranza a stress alto
-  fastingStressMultiplier: 0.90,
-
-  // se runDay: riduce tolleranza a hinge e posterior
-  runDayStressMultiplier: 0.90,
-
-  // penalità per duplicati (evita ripetizioni nella stessa sessione)
-  duplicatePenalty: 0.25
-};
-
-// -------------------------------
-// DEFAULT CUES PER CATEGORIA
-// -------------------------------
-
-const CATEGORY_CUES = {
-  pull: [
-    "Core contratto (addome attivo)",
-    "Schiena neutra (no cifosi/iperestensione)",
-    "Scapole: retrazione + depressione, poi tira",
-    "Gomiti vicino al corpo, controllo eccentrica"
-  ],
-  push: [
-    "Costole giù (evita iperlordosi)",
-    "Spalle basse e stabili",
-    "Polsi neutri, gomiti 30–60° dal busto",
-    "Controllo eccentrica, niente rimbalzi"
-  ],
-  posterior: [
-    "Hinge dalle anche (non piegare la schiena)",
-    "Colonna neutra, core attivo prima di scendere",
-    "Carico su glutei/femorali, non sulla lombare",
-    "Ritorno controllato (no slanci)"
-  ],
-  core: [
-    "Anti-estensione: bacino neutro, costole giù",
-    "Respirazione controllata (non trattenere)",
-    "Stabilità prima della durata"
-  ],
-  warmup: ["Movimenti fluidi, ROM controllato, senza dolore"],
-  mobility: ["ROM progressivo, nessun rimbalzo, respira"],
-};
-
-// -------------------------------
-// UTILS
-// -------------------------------
-
-function lower(s){ return String(s||"").toLowerCase(); }
-
-function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
-
-function hasAny(text, arr){
-  const t = lower(text);
-  return arr.some(k => t.includes(lower(k)));
-}
-
-// -------------------------------
-// CLASSIFICAZIONE (robusta ma compatibile con DB eterogenei)
-// -------------------------------
-
-function classifyExercise(ex){
-
-  const name = lower(ex.name);
-
-  const type = ex.type || (hasAny(name, ["plank","hold","isometric","side plank"]) ? "isometric" : "dynamic");
-
-  const hinge = Boolean(ex.hinge) || hasAny(name, ["rdl","romanian","good morning","hip hinge","deadlift","stacco"]);
-  const antiRotation = Boolean(ex.antiRotation) || hasAny(name, ["pallof","anti-rot"]);
-  const antiExtension = Boolean(ex.antiExtension) || hasAny(name, ["plank","hollow","dead bug","anti-ext"]);
-
-  // family/cat: nel tuo DB spesso c'è "family" (upper/lower/core) e/o category
-  const family = ex.family || (
-    hasAny(name, ["plank","dead bug","hollow","core"]) ? "core" :
-    (hasAny(name, ["squat","lunge","deadlift","rdl","glute","hip","calf","tibialis"]) ? "lower" : "upper")
-  );
-
-  // requiresAnchor: se nel DB non c'è, deduciamo da parole chiave
-  const requiresAnchor = (ex.requiresAnchor === true) ||
-    hasAny(name, ["anchor","door","porta","fiss", "attacc", "ancor"]);
-
-  // carichi base (0-3): euristiche conservative
-  let compressiveLoad = 1;
-  let shearLoad = 1;
-  let lumbarStress = 1;
-
-  if(type === "isometric"){
-    compressiveLoad = 0;
-    shearLoad = antiRotation ? 0 : 1;
-    lumbarStress = 1;
+  if (typeof TrainingKnowledge === "undefined") {
+    throw new Error("TrainingKnowledge not loaded");
   }
 
-  if(hinge){
-    compressiveLoad = 2;
-    shearLoad = 2;
-    lumbarStress = 2;
-  }
-
-  if(family === "core" && antiExtension){
-    compressiveLoad = 0;
-    shearLoad = 1;
-    lumbarStress = 1;
-  }
-
-  // rischio lombare 0-3 (più alto = più cautela)
-  const lumbarRisk = clamp(
-    (lumbarStress + shearLoad) - (type === "isometric" ? 1 : 0),
-    0, 3
-  );
-
-  // allowedMaxBand: posterior per sicurezza di default max 25 (se non specificato dal DB)
-  let allowedMaxBand = ex.allowedMaxBand;
-  if(allowedMaxBand == null){
-    allowedMaxBand = (family === "lower" && hinge) ? 25 : 35;
-  }
-
-  // cues: usa note del DB se presenti + cues categoria
-  const cues = []
-    .concat(ex.cues || [])
-    .concat(ex.note ? [ex.note] : [])
-    .concat(family === "core" ? CATEGORY_CUES.core : [])
-    .concat(family === "lower" && hinge ? CATEGORY_CUES.posterior : [])
-    .concat(family === "upper" ? (ex.category === "push" ? CATEGORY_CUES.push : CATEGORY_CUES.pull) : []);
-
-  return {
-    ...ex,
-    type,
-    family,
-    hinge,
-    antiRotation,
-    antiExtension,
-    requiresAnchor,
-    compressiveLoad,
-    shearLoad,
-    lumbarStress,
-    lumbarRisk,
-    allowedMaxBand,
-    cues
+  // ---------- helpers ----------
+  const lower = (s) => String(s || "").toLowerCase();
+  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  const hasAny = (text, arr) => {
+    const t = lower(text);
+    return (arr || []).some(k => t.includes(lower(k)));
   };
-}
 
-// -------------------------------
-// ADATTAMENTO NO-ANCHOR (non scarta: sostituisce)
-// -------------------------------
-// Supporta 2 strade:
-// A) nel DB esiste ex.adaptedVersion (oggetto) o ex.adaptedId (id riferimento)
-// B) fallback automatico per pattern, scegliendo un esercizio "free" simile
+  function normalizeExercise(ex) {
+    const clone = JSON.parse(JSON.stringify(ex || {}));
 
-function adaptExercise(ex, allClassified, globalConfig){
-
-  if(!globalConfig.noAnchors) return ex;
-
-  if(!ex.requiresAnchor) return ex;
-
-  // A) adaptedVersion inline
-  if(ex.adaptedVersion && typeof ex.adaptedVersion === "object"){
-    return classifyExercise(ex.adaptedVersion);
-  }
-
-  // A2) adaptedId: prova a trovare
-  if(ex.adaptedId){
-    const found = allClassified.find(e => e.id === ex.adaptedId);
-    if(found) return found;
-  }
-
-  // B) fallback automatico:
-  // - se anti-rotazione ancorata -> scegli core anti-rotation senza appiglio (es. side plank, dead bug reach, suitcase hold bw)
-  // - se row ancorata -> scegli row/band sotto piedi
-  // - se face pull ancorato -> pull-apart / high row sotto piedi
-
-  const name = lower(ex.name);
-
-  if(hasAny(name, ["pallof","anti-rot"])){
-    const candidates = allClassified.filter(e =>
-      e.family === "core" &&
-      !e.requiresAnchor &&
-      (e.antiRotation || hasAny(e.name, ["side plank","copenhagen","dead bug","bird dog"]))
-    );
-    if(candidates.length) return candidates[Math.floor(Math.random()*candidates.length)];
-  }
-
-  if(hasAny(name, ["row","rematore","tirata"])){
-    const candidates = allClassified.filter(e =>
-      !e.requiresAnchor &&
-      e.family === "upper" &&
-      hasAny(e.name, ["row","rematore","pull apart","high row"])
-    );
-    if(candidates.length) return candidates[Math.floor(Math.random()*candidates.length)];
-  }
-
-  if(hasAny(name, ["face pull"])){
-    const candidates = allClassified.filter(e =>
-      !e.requiresAnchor &&
-      e.family === "upper" &&
-      hasAny(e.name, ["pull apart","rear fly","high row","face pull"])
-    );
-    if(candidates.length) return candidates[Math.floor(Math.random()*candidates.length)];
-  }
-
-  // fallback generale: scegli un esercizio safe della stessa family
-  const safe = allClassified
-    .filter(e => !e.requiresAnchor && e.family === ex.family && e.lumbarRisk <= 2);
-  if(safe.length) return safe[Math.floor(Math.random()*safe.length)];
-
-  // ultimo fallback: ritorna comunque, ma sarà filtrato altrove
-  return ex;
-}
-
-// -------------------------------
-// STRESS CALC (coerente con StudyEngine)
-// -------------------------------
-
-function calcExerciseStress(ex, sets, band){
-  const bf = band ? (CFG.bandFactor[band] || 1) : 1;
-  return (ex.compressiveLoad + ex.shearLoad + ex.lumbarStress) * sets * bf;
-}
-
-// -------------------------------
-// SESSION CONSTRAINTS (runDay/fasting/hinge/stress)
-// -------------------------------
-
-function safetyFilter(ex, context, state){
-
-  // tipo isometrico: banda non applicabile (se context band imposto, non è un problema: stress usa band solo se band passata)
-  // ma possiamo ridurre stress isometrico ignorando band: lo gestisce SessionEngine quando costruisce la struttura (band=null).
-  // Qui: non blocchiamo.
-
-  // hinge count
-  if(ex.hinge && state.hingeCount >= CFG.maxHingePerSession) return false;
-
-  // runDay: elimina hinge (o lascia solo hinge a rischio basso)
-  if(context.runDay && ex.hinge) return false;
-
-  // fasting: elimina esercizi con compressive>1
-  if(context.fasting && ex.compressiveLoad > 1) return false;
-
-  // banda massima consentita per esercizio
-  if(ex.allowedMaxBand != null && context.band != null && context.band > ex.allowedMaxBand) return false;
-
-  // stress budget
-  const projected = state.totalStress + calcExerciseStress(ex, context.sets, context.band);
-  if(projected > state.maxStressBudget) return false;
-
-  // duplicati: penalizziamo fortemente
-  if(state.usedIds.has(ex.id || ex.name)){
-    // non sempre è vietato, ma lo rendiamo molto improbabile
-    return (Math.random() < CFG.duplicatePenalty);
-  }
-
-  return true;
-}
-
-// -------------------------------
-// SESSION STATE PREP
-// -------------------------------
-
-function initSessionState(context){
-
-  let maxBudget = CFG.maxSessionStress;
-  if(context.fasting) maxBudget *= CFG.fastingStressMultiplier;
-  if(context.runDay) maxBudget *= CFG.runDayStressMultiplier;
-
-  return {
-    totalStress: 0,
-    hingeCount: 0,
-    lumbarRiskIndex: 0,
-    usedIds: new Set(),
-    maxStressBudget: Math.round(maxBudget)
-  };
-}
-
-// -------------------------------
-// BALANCE CHECK (posterior vs pull) su sessione generata
-// -------------------------------
-
-function checkPosteriorPullBalance(exercises){
-
-  let pull = 0;
-  let post = 0;
-
-  exercises.forEach(ex=>{
-    // euristica: upper dynamic pull/push viene contato come pull per bilanciamento
-    // e hinge/lower come posterior
-    if(ex.family === "upper") pull += (ex.compressiveLoad + ex.shearLoad);
-    if(ex.family === "lower") post += (ex.compressiveLoad + ex.shearLoad);
-  });
-
-  if(pull <= 0) return { safe:true };
-
-  if(post > pull * CFG.posteriorPullRatio){
-    return { safe:false, warning:"Posterior overload: ridurre hinge/lower o aumentare tirate upper." };
-  }
-
-  return { safe:true };
-}
-
-// -------------------------------
-// PICK ONE EXERCISE (per SessionEngine che riempie tempo)
-// -------------------------------
-
-function pickOne(exerciseDB, context){
-
-  // flatten + classify
-  let all = [];
-  Object.keys(exerciseDB).forEach(k=>{
-    exerciseDB[k].forEach(ex=> all.push(classifyExercise(ex)));
-  });
-
-  // adaptation layer: se noAnchors, trasformiamo al volo quando candidati
-  const globalConfig = { noAnchors: (context.noAnchors ?? CFG.noAnchorsDefault) };
-
-  const state = context._state || initSessionState(context);
-
-  // filtro candidati
-  let pool = all;
-
-  // preferenze pattern (se context.preferFamily/pattern c'è)
-  if(context.preferFamily){
-    const p = pool.filter(e => e.family === context.preferFamily);
-    if(p.length) pool = p;
-  }
-
-  // shuffle tentativi
-  for(let tries=0; tries<80; tries++){
-
-    const cand0 = pool[Math.floor(Math.random()*pool.length)];
-    const cand = adaptExercise(cand0, all, globalConfig);
-
-    if(!safetyFilter(cand, context, state)) continue;
-
-    // aggiorna state (ma non definitivo: SessionEngine aggiorna davvero quando decide di includerlo)
-    return { exercise:cand, state };
-  }
-
-  // fallback: prendi il più safe
-  const safeSorted = pool
-    .map(e => adaptExercise(e, all, globalConfig))
-    .filter(e => !e.requiresAnchor)
-    .sort((a,b)=> a.lumbarRisk - b.lumbarRisk);
-
-  if(safeSorted.length){
-    const cand = safeSorted[0];
-    if(safetyFilter(cand, context, state)){
-      return { exercise:cand, state };
+    // normalize anchor flags from different DBs
+    if (clone.anchor !== undefined && clone.requiresAnchor === undefined) {
+      clone.requiresAnchor = !!clone.anchor;
     }
+    if (clone.requiresAnchor === undefined) {
+      const name = lower(clone.name);
+      clone.requiresAnchor = hasAny(name, ["anchor", "door", "porta", "ancor", "fiss"]);
+    }
+
+    // normalize tags
+    if (!Array.isArray(clone.tags)) clone.tags = [];
+    if (clone.family) clone.tags.push(clone.family);
+    if (clone.movement_pattern) clone.tags.push(clone.movement_pattern);
+
+    // apply TrainingKnowledge normalization (side plank => seconds, etc.)
+    return TrainingKnowledge.normalizeExercisePrescription(clone);
   }
 
-  return { exercise:null, state };
-}
+  // ---------- classification ----------
+  function classify(exRaw) {
+    const ex0 = normalizeExercise(exRaw);
+    const name = lower(ex0.name);
 
-// -------------------------------
-// COMMIT EXERCISE INTO STATE (SessionEngine call)
-// -------------------------------
+    const doseType = TrainingKnowledge.classifyDoseType(ex0);
 
-function commitExercise(ex, context, state){
+    const hinge = !!ex0.hinge || hasAny(name, ["rdl", "romanian", "good morning", "hip hinge", "deadlift", "stacco"]);
+    const antiRotation = !!ex0.antiRotation || hasAny(name, ["pallof", "anti-rot"]);
+    const antiExtension = !!ex0.antiExtension || hasAny(name, ["plank", "hollow", "dead bug", "anti-ext"]);
+    const isIsometric = (doseType === TrainingKnowledge.doseTypes.SECONDS) || hasAny(name, ["hold", "isometric", "iso"]);
 
-  const stress = calcExerciseStress(ex, context.sets, context.band);
-  state.totalStress += stress;
-  state.lumbarRiskIndex += ex.lumbarRisk;
+    // family/pattern
+    const family = ex0.family || ex0.group || ex0.category || (
+      hasAny(name, ["plank", "dead bug", "hollow", "core"]) ? "core" :
+      hasAny(name, ["squat", "lunge", "deadlift", "rdl", "glute", "hip", "calf", "tibialis"]) ? "posterior" :
+      "upper"
+    );
 
-  if(ex.hinge) state.hingeCount += 1;
+    const pattern =
+      ex0.movement_pattern ||
+      (hinge ? "hinge" :
+       family === "core" && antiRotation ? "anti_rotation" :
+       family === "core" && antiExtension ? "anti_extension" :
+       family === "core" ? "core_general" :
+       family === "upper" && hasAny(name, ["push", "press", "dip"]) ? "push" :
+       family === "upper" ? "pull" :
+       "general"
+      );
 
-  state.usedIds.add(ex.id || ex.name);
+    // conservative load heuristics (0..3)
+    let compressive = 1, shear = 1, lumbar = 1;
+    if (isIsometric) { compressive = 0; shear = antiRotation ? 0 : 1; lumbar = 1; }
+    if (hinge) { compressive = 2; shear = 2; lumbar = 2; }
+    if (family === "core" && antiExtension) { compressive = 0; shear = 1; lumbar = 1; }
 
-  return state;
-}
+    const lumbarRisk = clamp((lumbar + shear) - (isIsometric ? 1 : 0), 0, 3);
 
-// -------------------------------
-// PER-EXERCISE CUES & WARNINGS
-// -------------------------------
+    // allowedMaxBand (optional DB override)
+    let allowedMaxBand = ex0.allowedMaxBand;
+    if (allowedMaxBand == null) {
+      // hinge/posterior: conservative default
+      allowedMaxBand = (hinge || family === "posterior") ? 25 : 35;
+    }
 
-function getSafetyInfo(ex){
-
-  const warnings = [];
-
-  if(ex.type === "isometric"){
-    warnings.push("Esegui in tenuta: qualità > durata");
+    return {
+      ...ex0,
+      doseType,
+      isIsometric,
+      family,
+      pattern,
+      hinge,
+      antiRotation,
+      antiExtension,
+      compressiveLoad: compressive,
+      shearLoad: shear,
+      lumbarStress: lumbar,
+      lumbarRisk,
+      allowedMaxBand
+    };
   }
 
-  if(ex.hinge){
-    warnings.push("Neutro lombare: se perdi neutro, riduci ROM");
-    warnings.push("Core attivo PRIMA di scendere");
+  // ---------- no-anchor adaptation ----------
+  // Returns { ok:true, exercise, note } or { ok:false }
+  function adaptNoAnchor(exClassified, allClassified) {
+    const ex = exClassified;
+    const rules = TrainingKnowledge.noAnchorRules;
+
+    // if anchor not required => ok
+    if (!ex.requiresAnchor) return { ok: true, exercise: ex, note: null };
+
+    // explicit DB-provided adaptedVersion / adaptedId support
+    if (ex.adaptedVersion && typeof ex.adaptedVersion === "object") {
+      const a = classify(ex.adaptedVersion);
+      a.requiresAnchor = false;
+      return { ok: true, exercise: a, note: "Variante no-anchor (adaptedVersion)" };
+    }
+    if (ex.adaptedId && Array.isArray(allClassified)) {
+      const found = allClassified.find(e => e.id === ex.adaptedId);
+      if (found) return { ok: true, exercise: found, note: "Variante no-anchor (adaptedId)" };
+    }
+
+    // pattern-based safe replacement
+    const pool = (allClassified || []).filter(e => !e.requiresAnchor);
+
+    // anti-rotation anchored => pick core anti-rotation no-anchor
+    if (ex.antiRotation) {
+      const c = pool.filter(e => e.family === "core" && (e.antiRotation || hasAny(e.name, ["side plank", "bird dog", "dead bug"])));
+      if (c.length) return { ok: true, exercise: c[0], note: "Sostituzione no-anchor (anti-rot)" };
+    }
+
+    // pull anchored => row under feet / pull-apart / high row
+    if (ex.pattern === "pull") {
+      const c = pool.filter(e => e.family === "upper" && hasAny(e.name, ["row", "rematore", "pull-apart", "high row", "rear fly", "face pull"]));
+      if (c.length) return { ok: true, exercise: c[0], note: "Sostituzione no-anchor (pull)" };
+    }
+
+    // push anchored => band around back floor press / push-up variants
+    if (ex.pattern === "push") {
+      const c = pool.filter(e => hasAny(e.name, ["push-up", "floor press", "press", "pike push", "shoulder press"]));
+      if (c.length) return { ok: true, exercise: c[0], note: "Sostituzione no-anchor (push)" };
+    }
+
+    // last resort: same family, low lumbar risk
+    const safe = pool
+      .filter(e => e.family === ex.family && e.lumbarRisk <= 2)
+      .sort((a, b) => a.lumbarRisk - b.lumbarRisk);
+
+    if (safe.length) return { ok: true, exercise: safe[0], note: "Sostituzione no-anchor (fallback safe)" };
+
+    return { ok: false, note: "Nessuna variante no-anchor disponibile" };
   }
 
-  if(ex.antiExtension){
-    warnings.push("Costole giù: evita iperestensione lombare");
+  // ---------- cues & safety ----------
+  function getCues(exClassified) {
+    const cues = [];
+
+    // universal cues from TrainingKnowledge
+    (TrainingKnowledge.spineSafety.universalCues || []).forEach(x => cues.push(x));
+
+    // checklist pre-set
+    (TrainingKnowledge.technicalChecks.preSetChecklist || []).forEach(x => cues.push(x));
+
+    // pattern-specific
+    const byP = TrainingKnowledge.technicalChecks.byPattern || {};
+    if (exClassified.pattern === "hinge" && byP.hinge) cues.push(...byP.hinge);
+    if (exClassified.pattern === "pull" && byP.rowPull) cues.push(...byP.rowPull);
+    if (exClassified.pattern === "push" && byP.push) cues.push(...byP.push);
+    if (hasAny(exClassified.name, ["plank", "side plank"]) && byP.plank) cues.push(...byP.plank);
+
+    // exercise-specific cues if present
+    if (Array.isArray(exClassified.cues)) cues.push(...exClassified.cues);
+    if (exClassified.note) cues.push(exClassified.note);
+
+    // de-dup + cap
+    return Array.from(new Set(cues)).filter(Boolean).slice(0, 10);
   }
 
-  if(ex.antiRotation){
-    warnings.push("Bacino fermo: non ruotare per compensare");
+  function getWarnings(exClassified, ctx) {
+    const w = [];
+
+    if (exClassified.isIsometric) {
+      w.push("Unità: secondi (tenuta). Qualità > durata.");
+    }
+    if (exClassified.hinge) {
+      w.push("Hinge: stop se perdi neutro lombare; riduci ROM/banda.");
+    }
+    if (exClassified.antiExtension) {
+      w.push("Anti-estensione: costole giù, evita iperestensione lombare.");
+    }
+    if (exClassified.antiRotation) {
+      w.push("Anti-rotazione: bacino fermo, niente compensi.");
+    }
+    if (exClassified.requiresAnchor) {
+      w.push("Richiede appiglio: usare variante no-anchor proposta.");
+    }
+
+    // caution patterns from TrainingKnowledge
+    (TrainingKnowledge.spineSafety.cautionPatterns || []).forEach(x => w.push(x));
+
+    // if runDay: extra caution hinge
+    if (ctx?.runDay && exClassified.hinge) {
+      w.push("Giorno corsa: hinge/hinge pesanti sconsigliati.");
+    }
+
+    return Array.from(new Set(w)).slice(0, 8);
   }
 
-  if(ex.requiresAnchor){
-    warnings.push("Richiede appiglio: usare variante free proposta");
+  // Validate exercise against context
+  function validateExercise(exClassified, ctx) {
+    const c = ctx || {};
+
+    // fasting: more conservative (no hard compressive patterns)
+    if (c.fasting && exClassified.compressiveLoad > 1) return { ok: false, reason: "Fasting: esercizio troppo compressivo" };
+
+    // runDay: avoid hinge by default
+    if (c.runDay && exClassified.hinge) return { ok: false, reason: "Run day: hinge escluso" };
+
+    // band cap
+    if (c.band != null && exClassified.allowedMaxBand != null && c.band > exClassified.allowedMaxBand) {
+      return { ok: false, reason: "Banda troppo alta per esercizio" };
+    }
+
+    return { ok: true };
   }
 
-  // cues: unisci e compatta
-  const cues = Array.from(new Set([...(ex.cues||[]), ...(CATEGORY_CUES[ex.category]||[])]))
-    .filter(Boolean)
-    .slice(0, 8);
+  // ---------- session validation ----------
+  // Expects session.blocks.strength array items with .exercise + .sets
+  function validateSession(session) {
+    const warn = [];
 
-  return { cues, warnings };
-}
+    if (!session || !session.blocks) return { warnings: ["Sessione non valida"] };
 
-// -------------------------------
-// SESSION SUMMARY (per dashboard)
-// -------------------------------
+    let pullSets = 0, posteriorSets = 0, hingeCount = 0;
 
-function summarizeSession(exercises, context, state){
+    const strength = session.blocks.strength || [];
+    strength.forEach(it => {
+      if (!it || !it.exercise) return;
+      const ex = classify(it.exercise);
 
-  const balance = checkPosteriorPullBalance(exercises);
+      const sets = it.sets || 0;
 
+      // treat upper pull/push both count as "pull budget" for this ratio?:
+      // to align with your rule, we count UPPER as pull-base, POSTERIOR as posterior.
+      if (ex.family === "upper") pullSets += sets;
+      if (ex.family === "posterior") posteriorSets += sets;
+      if (ex.hinge) hingeCount += 1;
+    });
+
+    const cap = TrainingKnowledge.spineSafety.posteriorToPullCap || 1.2;
+    if (pullSets > 0 && posteriorSets > pullSets * cap) {
+      warn.push("Posterior overload: riduci posterior/hinge o aumenta tirate upper.");
+    }
+    // hinge limit: conservative: max 2
+    if (hingeCount > 2) warn.push("Troppi hinge nella sessione: limitare a 2.");
+
+    // stop rules always available to UI
+    (TrainingKnowledge.spineSafety.stopRules || []).forEach(x => warn.push(x));
+
+    return { warnings: Array.from(new Set(warn)).slice(0, 10) };
+  }
+
+  // ---------- public API ----------
   return {
-    totalStress: state.totalStress,
-    hingeCount: state.hingeCount,
-    lumbarRiskIndex: state.lumbarRiskIndex,
-    stressBudget: state.maxStressBudget,
-    balance
+    classify,
+    adaptNoAnchor: (ex) => adaptNoAnchor(classify(ex), null), // convenience (single ex)
+    adaptExerciseNoAnchor: adaptNoAnchor, // full form with pool
+    validateExercise,
+    getCues,
+    getWarnings,
+    validateSession
   };
-}
-
-// -------------------------------
-// PUBLIC API
-// -------------------------------
-
-return {
-  // per SessionEngine (riempimento tempo): prendi 1 esercizio safe
-  pickOne,
-
-  // per SessionEngine: committa nello state (stress/hinge/dup)
-  commitExercise,
-
-  // per UI: cues e warnings
-  getSafetyInfo,
-
-  // per StudyEngine/UI: summary sessione
-  summarizeSession,
-
-  // utilities
-  calcExerciseStress
-};
 
 })();
