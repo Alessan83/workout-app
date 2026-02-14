@@ -1,351 +1,308 @@
-// =======================================================
-// STUDY ENGINE v3.0
-// Coordinato con SessionEngine + BiomechanicalEngine
-// =======================================================
+/* ==========================================
+   StudyEngine.js — coordination core (v3.1)
+   Responsibilities:
+   - progression model (time -> sets -> band)
+   - deload rules
+   - modifiers (runDay, fasting)
+   - weekly advancement every 3 completed sessions
+   - posterior <= 1.2 * pull constraint (global)
+   - produces targets for SessionEngine
+   - stores state in localStorage
+========================================== */
 
-const StudyEngine = (function(){
+/* global TrainingKnowledge */
 
-// ------------------------------
-// CONFIG
-// ------------------------------
+(function () {
+  "use strict";
 
-const STORAGE_KEY = "studyEngineV3";
+  const StudyEngine = {};
 
-const BAND_LEVELS = [15,25,35];
+  const LS_KEY = "palestra_study_state_v3";
 
-const TENSION_FACTOR = {
-  15:1.0,
-  25:1.4,
-  35:1.8
-};
+  // ---- menus
+  const REP_MENU = [8, 10, 12, 14, 16, 18, 20];
+  const BAND_MENU = [15, 25, 35];
+  const RPE3 = { EASY: 1, MOD: 2, HARD: 3 };
 
-// Curva S 12 settimane
-const S_CURVE = [
-  0.85,0.9,0.95,1.0,
-  1.05,1.1,1.15,1.2,
-  1.15,1.1,1.0,0.8
-];
+  // ---- helpers
+  function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+  function jparse(s, fb) { try { return JSON.parse(s); } catch { return fb; } }
+  function jstring(x) { return JSON.stringify(x); }
 
-const POSTERIOR_PULL_RATIO = 1.2;
+  function todayISO() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
 
-// ------------------------------
-// INIT STATE
-// ------------------------------
+  // ---- 12-week S-curve volume/intensity driver (lightweight)
+  function sCurve01(week1to12) {
+    const w = clamp(week1to12, 1, 12) - 1; // 0..11
+    const x = (w - 5.5) / 2.0;
+    return 1 / (1 + Math.exp(-x));
+  }
 
-function defaultCategory(band=15){
-  return {
-    band:band,
-    time:40,
-    sets:3,
-    streak:0,
-    fatigue:0,
-    history:[]
-  };
-}
+  function volumeMultiplier(week1to12) {
+    const s = sCurve01(week1to12);
+    // 0.90 -> 1.12
+    return 0.90 + (1.12 - 0.90) * s;
+  }
 
-function initState(){
-  return {
-    week:1,
-    sessions:[],
-    categories:{
-      pull:defaultCategory(15),
-      push:defaultCategory(15),
-      posterior:defaultCategory(25),
-      core:{
-        time:30,
-        sets:2,
-        streak:0,
-        fatigue:0,
-        history:[]
+  // ---- state
+  function defaultState() {
+    return {
+      version: "3.1",
+      week: 1,
+      sessionInWeek: 0, // 0..2 (advance week every 3)
+      streak: 0,
+      lastCompletedDay: null,
+      hardSessionsInRow: 0,
+      deloadArmed: false,
+
+      // independent progressions (targets)
+      prog: {
+        pull:      { repIndex: 1, band: 15, setBase: 3 }, // 10 reps
+        push:      { repIndex: 1, band: 15, setBase: 3 },
+        posterior: { repIndex: 1, band: 15, setBase: 2 }, // constrained
+        core:      { holdSeconds: 25, setBase: 2 }         // time-based
       }
-    }
-  };
-}
-
-// ------------------------------
-// STORAGE
-// ------------------------------
-
-function load(){
-  return JSON.parse(localStorage.getItem(STORAGE_KEY)) || initState();
-}
-
-function save(data){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
-
-// ------------------------------
-// STIMULUS
-// ------------------------------
-
-function calcStimulus(cat){
-  if(!cat.band) return cat.time * cat.sets;
-  return cat.time * cat.sets * TENSION_FACTOR[cat.band];
-}
-
-// ------------------------------
-// CURVA S
-// ------------------------------
-
-function applySCurve(cat, week){
-
-  let index = (week-1)%12;
-  let factor = S_CURVE[index];
-
-  cat.time = Math.round(cat.time * factor);
-
-  return cat;
-}
-
-// ------------------------------
-// PROGRESSION LOGIC
-// ------------------------------
-
-function progressCategory(cat, categoryName, rpe, week){
-
-  if(rpe <=2){
-    cat.streak++;
-  } else {
-    cat.streak = 0;
-    cat.fatigue++;
-  }
-
-  // DELOAD
-  if(cat.fatigue >=2){
-    cat.time = Math.max(35, cat.time -5);
-    cat.sets = Math.max(2, cat.sets -1);
-    cat.fatigue = 0;
-    cat.streak = 0;
-    return cat;
-  }
-
-  // PROGRESSION
-  if(cat.streak >=2){
-
-    if(cat.time < 50){
-      cat.time +=5;
-    }
-    else if(cat.sets <4){
-      cat.sets +=1;
-    }
-    else if(cat.band){
-      let currentIndex = BAND_LEVELS.indexOf(cat.band);
-      if(currentIndex < BAND_LEVELS.length-1){
-
-        // Protezione L5-S1: posterior max 25
-        if(categoryName === "posterior" && BAND_LEVELS[currentIndex+1] > 25){
-          // non aumenta banda, aumenta solo tempo
-          cat.time +=5;
-        } else {
-          cat.band = BAND_LEVELS[currentIndex+1];
-        }
-
-        cat.time = 40;
-        cat.sets = 3;
-      }
-    }
-
-    cat.streak = 0;
-  }
-
-  cat = applySCurve(cat, week);
-
-  return cat;
-}
-
-// ------------------------------
-// LUMBAR PROTECTION
-// ------------------------------
-
-function lumbarProtection(data){
-
-  let pullLoad = calcStimulus(data.categories.pull);
-  let posteriorLoad = calcStimulus(data.categories.posterior);
-
-  if(posteriorLoad > pullLoad * POSTERIOR_PULL_RATIO){
-
-    data.categories.posterior.time -=5;
-    data.categories.posterior.sets =
-      Math.max(2, data.categories.posterior.sets -1);
-  }
-
-  return data;
-}
-
-// ------------------------------
-// RUN DAY ADJUST
-// ------------------------------
-
-function runDayAdjust(data){
-
-  data.categories.posterior.time =
-    Math.round(data.categories.posterior.time * 0.7);
-
-  data.categories.posterior.sets =
-    Math.max(2, data.categories.posterior.sets -1);
-
-  return data;
-}
-
-// ------------------------------
-// FASTING ADJUST
-// ------------------------------
-
-function fastingAdjust(data){
-
-  Object.keys(data.categories).forEach(cat=>{
-    data.categories[cat].time =
-      Math.round(data.categories[cat].time * 0.9);
-  });
-
-  return data;
-}
-
-// ------------------------------
-// FOR SESSION ENGINE
-// ------------------------------
-
-function getCategoryParams(){
-
-  let data = load();
-
-  return {
-    week:data.week,
-    categories:data.categories
-  };
-}
-
-// ------------------------------
-// REPORT SESSION RESULT
-// ------------------------------
-
-function reportSessionResult(report){
-
-  /*
-  report = {
-    rpe:{pull:1,push:2,posterior:2,core:1},
-    runDay:true/false,
-    fasting:true/false,
-    realSessionTime:1500,
-    totalStress:80
-  }
-  */
-
-  let data = load();
-
-  Object.keys(report.rpe).forEach(cat=>{
-
-    if(data.categories[cat]){
-
-      data.categories[cat] =
-        progressCategory(
-          data.categories[cat],
-          cat,
-          report.rpe[cat],
-          data.week
-        );
-
-      data.categories[cat].history.push({
-        date:new Date().toISOString(),
-        time:data.categories[cat].time,
-        band:data.categories[cat].band || null,
-        realSessionTime:report.realSessionTime,
-        totalStress:report.totalStress
-      });
-    }
-  });
-
-  if(report.runDay)
-    data = runDayAdjust(data);
-
-  if(report.fasting)
-    data = fastingAdjust(data);
-
-  data = lumbarProtection(data);
-
-  data.sessions.push({
-    date:new Date().toISOString(),
-    week:data.week,
-    duration:report.realSessionTime,
-    stress:report.totalStress
-  });
-
-  if(data.sessions.length % 3 ===0){
-    data.week++;
-  }
-
-  save(data);
-
-  return data;
-}
-
-// ------------------------------
-// DASHBOARD ANALYTICS
-// ------------------------------
-
-function getDashboard(){
-
-  let data = load();
-
-  let summary = {
-    week:data.week,
-    totalSessions:data.sessions.length,
-    categories:{}
-  };
-
-  Object.keys(data.categories).forEach(cat=>{
-    summary.categories[cat] = {
-      band:data.categories[cat].band || null,
-      time:data.categories[cat].time,
-      sets:data.categories[cat].sets,
-      stimulus:calcStimulus(data.categories[cat])
     };
-  });
-
-  return summary;
-}
-
-// ------------------------------
-// SIMULATION
-// ------------------------------
-
-function simulateProgress(weeks=12){
-
-  let sim = initState();
-
-  for(let i=0;i<weeks*3;i++){
-
-    Object.keys(sim.categories).forEach(cat=>{
-      sim.categories[cat] =
-        progressCategory(sim.categories[cat],cat,1,sim.week);
-    });
-
-    if(i%3===0) sim.week++;
   }
 
-  return sim;
-}
+  function loadState() {
+    const raw = localStorage.getItem(LS_KEY);
+    const st = jparse(raw, null);
+    if (!st || !st.prog) return defaultState();
 
-// ------------------------------
-// EXPORT JSON
-// ------------------------------
+    // forward-safe defaults
+    st.version = st.version || "3.1";
+    st.week = typeof st.week === "number" ? st.week : 1;
+    st.sessionInWeek = typeof st.sessionInWeek === "number" ? st.sessionInWeek : 0;
+    st.streak = typeof st.streak === "number" ? st.streak : 0;
+    st.hardSessionsInRow = typeof st.hardSessionsInRow === "number" ? st.hardSessionsInRow : 0;
+    st.deloadArmed = !!st.deloadArmed;
 
-function exportJSON(){
-  return JSON.stringify(load(),null,2);
-}
+    st.prog.pull = st.prog.pull || { repIndex: 1, band: 15, setBase: 3 };
+    st.prog.push = st.prog.push || { repIndex: 1, band: 15, setBase: 3 };
+    st.prog.posterior = st.prog.posterior || { repIndex: 1, band: 15, setBase: 2 };
+    st.prog.core = st.prog.core || { holdSeconds: 25, setBase: 2 };
 
-// ------------------------------
-// PUBLIC API
-// ------------------------------
+    return st;
+  }
 
-return {
-  load,
-  save,
-  getCategoryParams,
-  reportSessionResult,
-  getDashboard,
-  simulateProgress,
-  exportJSON
-};
+  function saveState(st) {
+    localStorage.setItem(LS_KEY, jstring(st));
+  }
+
+  // ---- context (inputs from UI/Coordinator)
+  StudyEngine.getContextForToday = function (userFlags) {
+    const flags = userFlags || {};
+    const minutes = (flags.minutes === 35 || flags.minutes === 30 || flags.minutes === 25) ? flags.minutes : 25;
+
+    return {
+      dayKey: todayISO(),
+      minutes,
+      runDay: !!flags.runDay,
+      fasting: !!flags.fasting,
+      rpe3: clamp(flags.rpe3 || RPE3.MOD, 1, 3),
+      noAnchors: flags.noAnchors !== undefined ? !!flags.noAnchors : true,
+      equipment: flags.equipment || ["bodyweight", "band", "miniloop", "rope", "stick"]
+    };
+  };
+
+  // ---- produce targets used by SessionEngine
+  StudyEngine.getTargets = function (state, ctx) {
+    const st = state || loadState();
+    const c = ctx || StudyEngine.getContextForToday({});
+
+    // base multipliers
+    let mult = volumeMultiplier(st.week);
+
+    // modifiers
+    if (c.minutes <= 25) mult *= 0.95;
+    if (c.minutes >= 35) mult *= 1.05;
+
+    if (c.runDay) mult *= 0.92;
+    if (c.fasting) mult *= 0.88;
+
+    // deload applies for next completed session if armed OR every 4th week on first session
+    const weekBoundaryDeload = (st.week % 4 === 0) && (st.sessionInWeek === 0);
+    const deload = st.deloadArmed || weekBoundaryDeload;
+    if (deload) mult *= 0.70;
+
+    // RPE: hard => small volume reduction
+    if (c.rpe3 === RPE3.HARD) mult *= 0.93;
+
+    // sets targets (rounded + clamped)
+    const pullSets = clamp(Math.round(st.prog.pull.setBase * mult), 2, 6);
+    const pushSets = clamp(Math.round(st.prog.push.setBase * mult), 2, 6);
+
+    let posteriorSets = clamp(Math.round(st.prog.posterior.setBase * mult), 1, 4);
+    // spine safety: posterior <= 1.2 * pull
+    posteriorSets = Math.min(posteriorSets, Math.max(1, Math.floor(pullSets * 1.2)));
+
+    const coreSets = clamp(Math.round(st.prog.core.setBase * mult), 1, 4);
+
+    // reps targets
+    const pullReps = REP_MENU[clamp(st.prog.pull.repIndex, 0, REP_MENU.length - 1)];
+    const pushReps = REP_MENU[clamp(st.prog.push.repIndex, 0, REP_MENU.length - 1)];
+    const postReps = REP_MENU[clamp(st.prog.posterior.repIndex, 0, REP_MENU.length - 1)];
+
+    // core hold seconds (time-based)
+    const baseHold = st.prog.core.holdSeconds || 25;
+    const hold = clamp(Math.round(baseHold * (deload ? 0.85 : 1.0) * (c.fasting ? 0.95 : 1.0)), 15, 60);
+
+    // band suggestions
+    const pullBand = BAND_MENU.includes(st.prog.pull.band) ? st.prog.pull.band : 15;
+    const pushBand = BAND_MENU.includes(st.prog.push.band) ? st.prog.push.band : 15;
+    const postBand = BAND_MENU.includes(st.prog.posterior.band) ? st.prog.posterior.band : 15;
+
+    // rest seconds template (can be overridden by trainingKnowledge)
+    const rest = StudyEngine.getRestSeconds(c.rpe3, deload);
+
+    // Provide a compact targets object (SessionEngine consumes)
+    return {
+      meta: {
+        week: st.week,
+        sessionInWeek: st.sessionInWeek,
+        deload,
+        mult: Number(mult.toFixed(3))
+      },
+      warmup:   { style: "simple", cycles: (c.minutes >= 35 ? 2 : 1) },
+      mobility: { style: "simple", count: 2 },
+      strength: {
+        pull:      { sets: pullSets, reps: pullReps, band: pullBand, rest, repMenu: REP_MENU, bandMenu: BAND_MENU },
+        push:      { sets: pushSets, reps: pushReps, band: pushBand, rest, repMenu: REP_MENU, bandMenu: BAND_MENU },
+        posterior: { sets: posteriorSets, reps: postReps, band: postBand, rest, repMenu: REP_MENU, bandMenu: BAND_MENU }
+      },
+      core:     { sets: coreSets, seconds: hold, rest: 15 },
+      cooldown: { style: "simple", count: 1 }
+    };
+  };
+
+  StudyEngine.getRestSeconds = function (rpe3, deload) {
+    // allow TrainingKnowledge override
+    if (TrainingKnowledge && TrainingKnowledge.modifiers && typeof TrainingKnowledge.modifiers.restSeconds === "function") {
+      return TrainingKnowledge.modifiers.restSeconds(rpe3, deload);
+    }
+    if (deload) return 25;
+    if (rpe3 === RPE3.EASY) return 25;
+    if (rpe3 === RPE3.MOD) return 35;
+    return 45;
+  };
+
+  // ---- apply result ONLY on "Allenamento completato"
+  // result expects at minimum:
+  // { dayKey, rpe3, summary:{pullRepsDone, pushRepsDone, posteriorRepsDone}, minutes, runDay, fasting }
+  StudyEngine.applySessionResult = function (state, result) {
+    const st = state || loadState();
+    const r = result || {};
+    const dayKey = r.dayKey || todayISO();
+
+    // streak
+    if (st.lastCompletedDay) {
+      const last = new Date(st.lastCompletedDay + "T00:00:00");
+      const cur = new Date(dayKey + "T00:00:00");
+      const diff = Math.round((cur - last) / 86400000);
+      if (diff === 1) st.streak += 1;
+      else if (diff > 1) st.streak = 1;
+      // diff==0: same day, keep
+    } else {
+      st.streak = 1;
+    }
+    st.lastCompletedDay = dayKey;
+
+    // hard sessions row
+    const rpe3 = clamp(r.rpe3 || RPE3.MOD, 1, 3);
+    if (rpe3 === RPE3.HARD) st.hardSessionsInRow += 1;
+    else st.hardSessionsInRow = 0;
+
+    // deload arming:
+    // - if 2 HARD sessions in a row => arm deload for next session
+    // - else if already armed => consume it now (will be cleared below)
+    if (st.hardSessionsInRow >= 2) st.deloadArmed = true;
+
+    // progression time -> sets -> band (per family)
+    function progressBandIfPossible(prog) {
+      const idx = BAND_MENU.indexOf(prog.band);
+      if (idx >= 0 && idx < BAND_MENU.length - 1) {
+        prog.band = BAND_MENU[idx + 1];
+        prog.repIndex = 2; // reset to 12 after band jump
+        return true;
+      }
+      return false;
+    }
+
+    function advanceFamily(key, repsDone) {
+      const prog = st.prog[key];
+      if (!prog) return;
+
+      // core is time-based
+      if (key === "core") {
+        // if easy/mod and consistent -> +5s up to 60
+        if (rpe3 !== RPE3.HARD) prog.holdSeconds = clamp((prog.holdSeconds || 25) + 5, 15, 60);
+        else prog.holdSeconds = clamp((prog.holdSeconds || 25) - 5, 15, 60);
+        return;
+      }
+
+      // during deload: slight regression/hold
+      if (st.deloadArmed) {
+        prog.repIndex = clamp(prog.repIndex - 1, 0, REP_MENU.length - 1);
+        return;
+      }
+
+      const target = REP_MENU[clamp(prog.repIndex, 0, REP_MENU.length - 1)];
+      const success = (repsDone >= target) && (rpe3 !== RPE3.HARD);
+      const fail = (repsDone < Math.max(6, target - 4)) || (rpe3 === RPE3.HARD);
+
+      if (success) {
+        if (prog.repIndex < REP_MENU.length - 1) {
+          prog.repIndex += 1;
+        } else {
+          // reps max => upgrade band or increase base sets (capped)
+          const upgraded = progressBandIfPossible(prog);
+          if (!upgraded) prog.setBase = clamp(prog.setBase + 1, 2, 5);
+        }
+      } else if (fail) {
+        // small regression for stability
+        prog.repIndex = clamp(prog.repIndex - 1, 0, REP_MENU.length - 1);
+      }
+    }
+
+    const s = r.summary || {};
+    advanceFamily("pull", s.pullRepsDone || s.pull || 0);
+    advanceFamily("push", s.pushRepsDone || s.push || 0);
+    advanceFamily("posterior", s.posteriorRepsDone || s.posterior || 0);
+    advanceFamily("core", s.core || 0);
+
+    // posterior constraint (global)
+    const maxPosterior = Math.max(1, Math.floor(st.prog.pull.setBase * 1.2));
+    st.prog.posterior.setBase = Math.min(st.prog.posterior.setBase, maxPosterior);
+
+    // advance week every 3 sessions
+    st.sessionInWeek = (st.sessionInWeek + 1) % 3;
+    if (st.sessionInWeek === 0) st.week += 1;
+
+    // consume deload if it was armed
+    if (st.deloadArmed) st.deloadArmed = false;
+
+    saveState(st);
+    return st;
+  };
+
+  // ---- exports / state
+  StudyEngine.getState = function () { return loadState(); };
+  StudyEngine.setState = function (st) { saveState(st); };
+
+  StudyEngine.exportJSON = function () {
+    return {
+      exportedAt: new Date().toISOString(),
+      state: loadState()
+    };
+  };
+
+  window.StudyEngine = StudyEngine;
 
 })();
