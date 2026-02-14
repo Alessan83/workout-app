@@ -1,273 +1,238 @@
-// =======================================================
-// WORKOUT COORDINATOR v4.0 (STABILE)
-// Integra:
-// - TrainingKnowledge (regole teoriche)
-// - exerciseDB (database esercizi)
-// - StudyEngine (progressione + storico sessioni)
-// - SessionEngine (costruzione seduta con tempo reale)
-// - BiomechanicalEngine (sicurezza + stress + cues)
-// + Adattamento settimanale da bilancia (trend ogni 7 giorni)
-// =======================================================
+/* =========================================================
+   workoutCoordinator.js — COORDINATOR v4.1 (aligned)
+   Compatible with:
+     - exercises.json  (movement DB loaded elsewhere into `exerciseDB`)
+     - trainingKnowledge.js (global TrainingKnowledge)
+     - studyEngine.js (global StudyEngine)
+     - biomechanicalEngine.js (global BiomechanicalEngine)
+     - sessionengine1.js (global SessionEngine)
 
-const WorkoutCoordinator = (function(){
+   Responsibilities (ONLY):
+     - Read UI flags (minutes/runDay/fasting/rpe3/noAnchors)
+     - Get deterministic today session (SessionEngine.getOrCreateTodaySession)
+     - Render session to UI (minimal hooks, no styling opinions)
+     - On "Allenamento completato" collect inputs and call SessionEngine.completeWorkout
+     - Maintain streak box (single square) using StudyEngine state
+     - Provide Export JSON blob for future ChatGPT analysis
 
-// ------------------------------
-// STORAGE
-// ------------------------------
-const KEY = "workoutCoordinatorV4";
+   Notes:
+     - No progression logic here.
+     - No biomechanics logic here.
+     - No saving unless user presses "Allenamento completato".
+========================================================= */
 
-function loadState(){
-  return JSON.parse(localStorage.getItem(KEY)) || {
-    weeklyBody: [],   // [{dateISO, bodyFat, weight, muscleMass, subcutFat}]
-    lastWeeklyUpdateISO: null
-  };
-}
-function saveState(st){
-  localStorage.setItem(KEY, JSON.stringify(st));
-}
+/* global StudyEngine, SessionEngine */
 
-// ------------------------------
-// UTILS
-// ------------------------------
-function todayISO(){
-  return new Date().toISOString();
-}
-function daysBetween(isoA, isoB){
-  const a = new Date(isoA).getTime();
-  const b = new Date(isoB).getTime();
-  return Math.floor(Math.abs(a - b) / (1000*60*60*24));
-}
-function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+const WorkoutCoordinator = (function () {
+  "use strict";
 
-// ------------------------------
-// DEFAULTS (se mancano dati bilancia)
-// ------------------------------
-function normalizeUserData(userData){
-  return {
-    bodyFat: (userData && typeof userData.bodyFat === "number") ? userData.bodyFat : 20,
-    weight: (userData && typeof userData.weight === "number") ? userData.weight : null,
-    muscleMass: (userData && typeof userData.muscleMass === "number") ? userData.muscleMass : null,
-    subcutFat: (userData && typeof userData.subcutFat === "number") ? userData.subcutFat : null
-  };
-}
+  // -------------- DOM helpers --------------
+  const $ = (id) => document.getElementById(id);
 
-// =======================================================
-// 1) WEEKLY BODY DATA + TREND
-// =======================================================
-
-function addWeeklyBodyEntry(userData, force=false){
-  const st = loadState();
-  const now = todayISO();
-
-  // aggiungi solo se è passato ~7 giorni dall’ultimo entry
-  if(!force && st.weeklyBody.length > 0){
-    const last = st.weeklyBody[st.weeklyBody.length-1];
-    if(daysBetween(last.dateISO, now) < 7) return st; // non aggiorna
+  function safeInt(v, fb = 0) {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : fb;
   }
 
-  st.weeklyBody.push({ dateISO: now, ...normalizeUserData(userData) });
-  st.lastWeeklyUpdateISO = now;
-
-  // mantieni max 16 settimane in memoria (circa 4 mesi)
-  if(st.weeklyBody.length > 16){
-    st.weeklyBody = st.weeklyBody.slice(st.weeklyBody.length - 16);
+  function safeBool(v) {
+    return !!v;
   }
 
-  saveState(st);
-  return st;
-}
+  // -------------- State --------------
+  let exerciseDB = null;
+  let currentSession = null;
 
-function getWeeklyTrend(){
-  const st = loadState();
-  if(st.weeklyBody.length < 2) return null;
+  // -------------- UI flag reading --------------
+  function readFlagsFromUI() {
+    // You can map these IDs to your real HTML controls.
+    // If a control is missing, defaults are applied.
+    const minutes = safeInt($("modeMinutes")?.value, 25); // expected: 25/30/35
+    const runDay = safeBool($("flagRunDay")?.checked);
+    const fasting = safeBool($("flagFasting")?.checked);
+    const rpe3 = safeInt($("rpe3")?.value, 2); // 1..3
+    const noAnchors = $("flagNoAnchors") ? safeBool($("flagNoAnchors")?.checked) : true;
 
-  const cur = st.weeklyBody[st.weeklyBody.length-1];
-  const prev = st.weeklyBody[st.weeklyBody.length-2];
-
-  // soglie minime per ignorare rumore impedenziometrico
-  const bfDelta = (cur.bodyFat != null && prev.bodyFat != null) ? (cur.bodyFat - prev.bodyFat) : 0;
-  const musDelta = (cur.muscleMass != null && prev.muscleMass != null) ? (cur.muscleMass - prev.muscleMass) : 0;
-
-  return {
-    current: cur,
-    previous: prev,
-    bfDelta,
-    musDelta
-  };
-}
-
-// =======================================================
-// 2) GOAL MODE + POLICY (da TrainingKnowledge)
-// =======================================================
-
-function buildPolicyFromKnowledge(week, userData, flags, weeklyTrend){
-
-  // TrainingKnowledge fornisce: goalMode/phase/range/tempo ecc.
-  // In caso non esista TrainingKnowledge, fallback coerente.
-  const hasTK = (typeof TrainingKnowledge !== "undefined");
-
-  const goalMode = hasTK
-    ? TrainingKnowledge.determineGoalMode(userData.bodyFat)
-    : (userData.bodyFat >= 23 ? "cut" : (userData.bodyFat >= 20 ? "recomposition" : "strength"));
-
-  const phase = hasTK
-    ? TrainingKnowledge.determinePhase(week)
-    : "accumulation";
-
-  const repRange = hasTK
-    ? TrainingKnowledge.getRepRange(goalMode, phase)
-    : {min:8, max:12};
-
-  const tempo = hasTK
-    ? TrainingKnowledge.getTempo(goalMode)
-    : "2-1-2";
-
-  // Bias settimanali (derivati da trend)
-  // - Se BF non scende (bfDelta >= 0.2) => aumenta metabolico leggermente
-  // - Se muscolo cala (musDelta <= -0.2) => aumenta tensione leggermente
-  let metabolicBias = 1.0;
-  let tensionBias = 1.0;
-
-  if(weeklyTrend){
-    if(weeklyTrend.bfDelta >= 0.2) metabolicBias += 0.05;
-    if(weeklyTrend.musDelta <= -0.2) tensionBias += 0.05;
+    return { minutes, runDay, fasting, rpe3, noAnchors };
   }
 
-  // Regole rachide (sempre)
-  // Il BiomechanicalEngine le applica per esercizio; qui impostiamo limiti/policy generali.
-  const spinePolicy = {
-    noAnchors: true,
-    hingeLimit: 2,
-    posteriorMaxBand: 25
-  };
+  // -------------- Rendering --------------
+  // Minimal renderer: expects a container element with id "sessionBox"
+  // You can replace this with your UI code; keep data model unchanged.
+  function renderSession(session) {
+    const box = $("sessionBox");
+    if (!box) return;
 
+    const b = session.blocks;
+
+    function renderItem(it, idx) {
+      const unit = it.unit === "seconds" ? `${it.seconds || 0}s` : `${it.reps || 0} reps`;
+      const band = it.band ? ` — banda ${it.band}` : "";
+      const sets = it.sets ? `${it.sets} set` : "1 set";
+      const rest = it.restSec ? ` — rest ${it.restSec}s` : "";
+      const cue = (it.cues && it.cues.length) ? `\n• ${it.cues.slice(0, 3).join("\n• ")}` : "";
+      const warn = (it.warnings && it.warnings.length) ? `\n⚠ ${it.warnings.slice(0, 2).join(" | ")}` : "";
+
+      return `
+<div class="exRow" data-family="${it.family || it.kind || ""}">
+  <div><b>${idx + 1}. ${it.name}</b></div>
+  <div>${sets} — ${unit}${band}${rest}</div>
+  <div style="opacity:.85; font-size:.92em; white-space:pre-line">${cue}${warn}</div>
+</div>`;
+    }
+
+    function section(title, arr) {
+      if (!arr || !arr.length) return "";
+      const html = arr.map(renderItem).join("\n");
+      return `<div class="sec"><h3>${title}</h3>${html}</div>`;
+    }
+
+    const meta = session.meta || {};
+    const head = `
+<div class="sec">
+  <div><b>Oggi</b>: ${meta.dayKey} — ${meta.minutes}’ — RPE ${meta.rpe3} ${meta.deload ? "— DELOAD" : ""}</div>
+  <div style="opacity:.85">Tempo stimato: ${meta.estimatedMinutes}’</div>
+  ${(meta.sessionWarnings && meta.sessionWarnings.length) ? `<div style="opacity:.9">⚠ ${meta.sessionWarnings.slice(0,3).join(" | ")}</div>` : ""}
+</div>`;
+
+    box.innerHTML =
+      head +
+      section("Riscaldamento", b.warmup) +
+      section("Mobilità", b.mobility) +
+      section("Forza (3 esercizi)", b.strength) +
+      section("Core / Controllo", b.coreControl) +
+      section("Cooldown (respiro)", b.cooldown);
+
+    // Also render input controls for reps done (dropdown) + technique OK toggles
+    renderCompletionInputs(session);
+  }
+
+  function renderCompletionInputs(session) {
+    const area = $("completeBox");
+    if (!area) return;
+
+    const strength = session.blocks.strength || [];
+    const repOptions = [8, 10, 12, 14, 16, 18, 20]
+      .map(x => `<option value="${x}">${x}</option>`)
+      .join("");
+
+    // Build rows for pull/push/posterior based on `family`
+    const rowFor = (fam, label) => {
+      const ex = strength.find(x => x.family === fam);
+      if (!ex) return "";
+      return `
+<div class="doneRow" data-family="${fam}">
+  <div><b>${label}</b>: ${ex.name}</div>
+  <div>
+    Reps fatte:
+    <select id="done_${fam}">${repOptions}</select>
+    <label style="margin-left:10px">
+      Tecnica OK <input type="checkbox" id="ok_${fam}" checked />
+    </label>
+  </div>
+</div>`;
+    };
+
+    area.innerHTML = `
+<div class="sec">
+  <h3>Fine allenamento</h3>
+  ${rowFor("pull","PULL")}
+  ${rowFor("push","PUSH")}
+  ${rowFor("posterior","POSTERIOR")}
+  <div style="margin-top:10px">
+    Note: <input id="done_notes" type="text" style="width:100%" placeholder="facoltativo" />
+  </div>
+</div>`;
+  }
+
+  // -------------- Streak (single square) --------------
+  function renderStreak() {
+    const el = $("streakBox");
+    if (!el || !StudyEngine) return;
+
+    const st = StudyEngine.getState();
+    const dayKey = (st && st.lastCompletedDay) ? st.lastCompletedDay : "—";
+    const streak = (st && st.streak) ? st.streak : 0;
+
+    el.innerHTML = `
+<div class="sec">
+  <div><b>Ultimo giorno</b>: ${dayKey}</div>
+  <div><b>Streak</b>: ${streak} giorni</div>
+</div>`;
+  }
+
+  // -------------- Main actions --------------
+  function ensureDBLoaded() {
+    if (!exerciseDB) throw new Error("exerciseDB not loaded in coordinator. Load exercises.json first.");
+  }
+
+  function generateToday() {
+    ensureDBLoaded();
+    const flags = readFlagsFromUI();
+    currentSession = SessionEngine.getOrCreateTodaySession(exerciseDB, flags);
+    renderSession(currentSession);
+    renderStreak();
+  }
+
+  function completeWorkout() {
+    if (!currentSession) throw new Error("No current session. Generate first.");
+    const s = currentSession.blocks.strength || [];
+
+    const pull = s.find(x => x.family === "pull");
+    const push = s.find(x => x.family === "push");
+    const post = s.find(x => x.family === "posterior");
+
+    const payload = {
+      repsDone: {
+        pull: pull ? safeInt($("done_pull")?.value, 0) : 0,
+        push: push ? safeInt($("done_push")?.value, 0) : 0,
+        posterior: post ? safeInt($("done_posterior")?.value, 0) : 0
+      },
+      techniqueOk: {
+        pullOk: pull ? safeBool($("ok_pull")?.checked) : true,
+        pushOk: push ? safeBool($("ok_push")?.checked) : true,
+        posteriorOk: post ? safeBool($("ok_posterior")?.checked) : true
+      },
+      notes: $("done_notes")?.value || ""
+    };
+
+    const out = SessionEngine.completeWorkout(currentSession, payload);
+
+    // After completion: update streak + regenerate next session only on user request
+    renderStreak();
+
+    // Optional: show export blob to a textarea if present
+    const exportBox = $("exportBox");
+    if (exportBox) exportBox.value = JSON.stringify(out.exportBlob, null, 2);
+
+    // Minimal feedback (avoid alerts if you prefer)
+    const status = $("statusBox");
+    if (status) status.textContent = "Allenamento salvato.";
+  }
+
+  function exportJSON() {
+    const blob = SessionEngine.exportJSON();
+    const txt = JSON.stringify(blob, null, 2);
+
+    const exportBox = $("exportBox");
+    if (exportBox) exportBox.value = txt;
+
+    return txt;
+  }
+
+  // -------------- Public API --------------
   return {
-    sessionMinutes: flags.sessionMinutes || 25,
-    runDay: !!flags.runDay,
-    fasting: !!flags.fasting,
-
-    week,
-    goalMode,
-    phase,
-
-    repRange,
-    tempo,
-
-    metabolicBias,
-    tensionBias,
-
-    spinePolicy
-  };
-}
-
-// =======================================================
-// 3) SESSION GENERATION (orchestrazione completa)
-// =======================================================
-
-function generateTodayWorkout(exerciseDB, userDataRaw, flags){
-
-  const userData = normalizeUserData(userDataRaw);
-
-  // (A) optional: aggiorna weekly entry se sono passati 7 giorni
-  //     l’utente può anche forzare chiamando recordWeeklyBody() manualmente
-  addWeeklyBodyEntry(userData, false);
-
-  const weeklyTrend = getWeeklyTrend();
-
-  const studyParams = StudyEngine.getCategoryParams();
-  const week = studyParams.week;
-
-  // policy dal knowledge + trend
-  const policy = buildPolicyFromKnowledge(week, userData, flags, weeklyTrend);
-
-  // banda di riferimento: usa quella della categoria pull (coerente col tuo sistema)
-  // Nota: per posterior comunque il biomechanical limiterà a 25 se hinge.
-  policy.band = studyParams.categories.pull.band;
-
-  // passa policy a SessionEngine (SessionEngine deve usare BiomechanicalEngine dentro al loop)
-  // SessionEngine restituisce sessione completa + summary biomeccanico (stress/risk)
-  const session = SessionEngine.generateSession(exerciseDB, policy);
-
-  // arricchisci con contesto (utile UI + export)
-  return {
-    session,
-    meta: {
-      generatedAt: todayISO(),
-      week,
-      goalMode: policy.goalMode,
-      phase: policy.phase,
-      runDay: policy.runDay,
-      fasting: policy.fasting,
-      repRange: policy.repRange,
-      tempo: policy.tempo,
-      metabolicBias: policy.metabolicBias,
-      tensionBias: policy.tensionBias
+    // set DB once loaded
+    setExerciseDB(db) {
+      exerciseDB = db;
     },
-    weeklyTrend
+
+    // UI actions
+    generateToday,
+    completeWorkout,
+    exportJSON,
+
+    // for debugging
+    getCurrentSession() { return currentSession; }
   };
-}
-
-// =======================================================
-// 4) COMPLETE WORKOUT (salvataggio progressione)
-// =======================================================
-
-function completeTodayWorkout(sessionObj, rpeData, flags){
-
-  // sessionObj può essere {session, meta,...} o direttamente session
-  const session = sessionObj.session ? sessionObj.session : sessionObj;
-
-  // struttura report (StudyEngine aggiorna progressione + curva S)
-  const report = {
-    rpe: rpeData,
-    runDay: !!flags.runDay,
-    fasting: !!flags.fasting,
-    realSessionTime: session.totalTime,
-    totalStress: session.summary && typeof session.summary.totalStress === "number"
-      ? session.summary.totalStress
-      : 0
-  };
-
-  StudyEngine.reportSessionResult(report);
-  return StudyEngine.getDashboard();
-}
-
-// =======================================================
-// 5) API: weekly body data management + export
-// =======================================================
-
-function recordWeeklyBody(userData){
-  return addWeeklyBodyEntry(normalizeUserData(userData), true);
-}
-
-function getWeeklyBodyHistory(){
-  return loadState().weeklyBody.slice();
-}
-
-function exportJSONForAnalysis(){
-  // export unico: utile per analisi futura con ChatGPT
-  return JSON.stringify({
-    coordinator: loadState(),
-    study: JSON.parse(StudyEngine.exportJSON()),
-    exportedAt: todayISO()
-  }, null, 2);
-}
-
-// =======================================================
-// PUBLIC API
-// =======================================================
-
-return {
-  // ciclo principale
-  generateTodayWorkout,
-  completeTodayWorkout,
-
-  // bilancia settimanale
-  recordWeeklyBody,
-  getWeeklyBodyHistory,
-
-  // trend / export
-  getWeeklyTrend,
-  exportJSONForAnalysis
-};
 
 })();
