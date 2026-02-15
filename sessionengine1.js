@@ -87,10 +87,21 @@ const SessionEngine = (function () {
 
     let active = 0;
     if (item.unit === "seconds") {
-      active = tempoAPI.estimateHoldSeconds(item.seconds || 0);
+      // hold/seconds
+      if (typeof tempoAPI.estimateHoldSeconds === "function") {
+        active = tempoAPI.estimateHoldSeconds(item.seconds || 0);
+      } else {
+        active = Number(item.seconds || 0);
+      }
     } else {
+      // reps
       const reps = item.reps || 0;
-      active = tempoAPI.estimateSetSeconds(reps, item.tempo || null);
+      if (typeof tempoAPI.estimateSetSeconds === "function") {
+        active = tempoAPI.estimateSetSeconds(reps, item.tempo || null);
+      } else {
+        // fallback rough: 4s per rep
+        active = reps * 4;
+      }
     }
 
     // Between sets: (sets-1)*rest. Add small transition once per exercise.
@@ -101,6 +112,25 @@ const SessionEngine = (function () {
     return (list || []).reduce((acc, x) => acc + estimateExerciseSeconds(x), 0);
   }
 
+  // ------------------ template duration helper ------------------
+  // Accepts durationMin in any of these shapes:
+  // { for25: 3, for35: 5 } OR { "25":3, "35":5 } OR { 25:3, 35:5 }
+  function durationMinutes(tpl, minutes, fallbackMin) {
+    const fb = Number.isFinite(fallbackMin) ? fallbackMin : 0;
+    if (!tpl || !tpl.durationMin) return fb;
+
+    const d = tpl.durationMin;
+
+    // canonical keys
+    const k = minutes >= 35 ? "for35" : (minutes >= 30 ? "for30" : "for25");
+    if (d && typeof d === "object") {
+      if (Number.isFinite(d[k])) return d[k];
+      if (Number.isFinite(d[String(minutes)])) return d[String(minutes)];
+      if (Number.isFinite(d[minutes])) return d[minutes];
+    }
+    return fb;
+  }
+
   // ------------------ selection utils ------------------
   function normalizeDB(exerciseDB) {
     const arr = Array.isArray(exerciseDB) ? exerciseDB : [];
@@ -109,6 +139,7 @@ const SessionEngine = (function () {
 
   function classifyAll(exerciseDB) {
     const db = normalizeDB(exerciseDB);
+    // BiomechanicalEngine.classify must accept a movement object and return enriched object
     return db.map(ex => BiomechanicalEngine.classify(ex));
   }
 
@@ -119,30 +150,34 @@ const SessionEngine = (function () {
   }
 
   function chooseStrengthExercises(pool, targets, ctx, rand) {
-    // Choose 1 pull, 1 push, 1 posterior (stabilization). Upper focus.
-    // Uses pattern heuristic from BiomechanicalEngine.classify().
+    // Choose 1 pull, 1 push, 1 posterior (stabilization).
     const noAnchors = !!ctx.noAnchors;
-
     const candidates = filterNoAnchor(pool, noAnchors);
 
     const pullPool = candidates.filter(e => (e.pattern === "pull" || e.family === "upper") && !e.hinge);
     const pushPool = candidates.filter(e => (e.pattern === "push" || e.family === "upper") && !e.hinge);
-    let postPool  = candidates.filter(e => (e.family === "posterior") || e.hinge || /glute|hip|calf|tibialis|hinge|deadlift|rdl/i.test(e.name));
+    let postPool  = candidates.filter(e =>
+      (e.family === "posterior") || e.hinge || /glute|hip|calf|tibialis|hinge|deadlift|rdl/i.test(e.name)
+    );
 
     // Run day: avoid hinge; prefer calves/tibialis/hip stability.
     if (ctx.runDay) {
       postPool = candidates.filter(e =>
         (e.family === "posterior") &&
         !e.hinge &&
-        e.lumbarRisk <= 2 &&
+        (e.lumbarRisk == null || e.lumbarRisk <= 2) &&
         /calf|polpacc|tibialis|cavigl|ankle|glute bridge|bridge|hip/i.test(e.name)
       );
       if (!postPool.length) {
-        postPool = candidates.filter(e => (e.family === "posterior") && !e.hinge && e.lumbarRisk <= 2);
+        postPool = candidates.filter(e =>
+          (e.family === "posterior") &&
+          !e.hinge &&
+          (e.lumbarRisk == null || e.lumbarRisk <= 2)
+        );
       }
     } else {
       // non-run day: still keep lumbar-safe (<=2 preferred)
-      const safe = postPool.filter(e => e.lumbarRisk <= 2);
+      const safe = postPool.filter(e => (e.lumbarRisk == null || e.lumbarRisk <= 2));
       if (safe.length) postPool = safe;
     }
 
@@ -170,8 +205,10 @@ const SessionEngine = (function () {
       if (!ex) return null;
       if (!ctx.noAnchors) return ex;
 
-      const res = BiomechanicalEngine.adaptExerciseNoAnchor(ex, candidates);
-      if (res && res.ok && res.exercise) return res.exercise;
+      if (BiomechanicalEngine && typeof BiomechanicalEngine.adaptExerciseNoAnchor === "function") {
+        const res = BiomechanicalEngine.adaptExerciseNoAnchor(ex, candidates);
+        if (res && res.ok && res.exercise) return res.exercise;
+      }
       return ex; // fallback
     }
 
@@ -185,11 +222,11 @@ const SessionEngine = (function () {
   // ------------------ build blocks ------------------
   function buildWarmupBlock(targets, ctx) {
     // Use dosingTemplates.warmup examples; convert into executable items
-    const tpl = targets.warmup || TrainingKnowledge.dosingTemplates.warmup;
-    const mins = (ctx.minutes >= 35) ? tpl.durationMin.for35 : ;
+    const tpl = (targets && targets.warmup) ? targets.warmup : (TrainingKnowledge.dosingTemplates && TrainingKnowledge.dosingTemplates.warmup);
+    const mins = durationMinutes(tpl, ctx.minutes, 3);
 
-    // One to two “micro-exercises” from examples, 1 set each, reps mid-range
-    const exs = (tpl.examples || []).slice(0, 3);
+    // One to three “micro-exercises” from examples
+    const exs = (tpl && tpl.examples ? tpl.examples : []).slice(0, 3);
     const items = exs.map((e) => {
       const mid = Math.round((e.range[0] + e.range[1]) / 2);
       return {
@@ -200,7 +237,7 @@ const SessionEngine = (function () {
         reps: e.unit === "reps" ? mid : undefined,
         seconds: e.unit === "seconds" ? mid : undefined,
         restSec: 0,
-        tempo: TrainingKnowledge.tempo.defaultSeconds,
+        tempo: TrainingKnowledge.tempo && TrainingKnowledge.tempo.defaultSeconds ? TrainingKnowledge.tempo.defaultSeconds : null,
         transitionSec: 6
       };
     });
@@ -209,10 +246,10 @@ const SessionEngine = (function () {
   }
 
   function buildMobilityBlock(targets, ctx) {
-    const tpl = targets.mobility || TrainingKnowledge.dosingTemplates.mobility;
-   const min = tpl.durationMin?.[sessionMinutes] ?? 0;
+    const tpl = (targets && targets.mobility) ? targets.mobility : (TrainingKnowledge.dosingTemplates && TrainingKnowledge.dosingTemplates.mobility);
+    const mins = durationMinutes(tpl, ctx.minutes, 2);
 
-    const exs = (tpl.examples || []).slice(0, 2);
+    const exs = (tpl && tpl.examples ? tpl.examples : []).slice(0, 2);
     const items = exs.map((e) => {
       const mid = Math.round((e.range[0] + e.range[1]) / 2);
       return {
@@ -223,7 +260,7 @@ const SessionEngine = (function () {
         reps: e.unit === "reps" ? mid : undefined,
         seconds: e.unit === "seconds" ? mid : undefined,
         restSec: 0,
-        tempo: TrainingKnowledge.tempo.defaultSeconds,
+        tempo: TrainingKnowledge.tempo && TrainingKnowledge.tempo.defaultSeconds ? TrainingKnowledge.tempo.defaultSeconds : null,
         transitionSec: 6
       };
     });
@@ -232,12 +269,15 @@ const SessionEngine = (function () {
   }
 
   function buildCoreControlBlock(targets, ctx) {
-    // Small control block (not the “main core” which user wants minimal)
-    const tpl = targets.coreControl || TrainingKnowledge.dosingTemplates.coreControl;
-    const min = tpl.durationMin?.[sessionMinutes] ?? 0;
+    // Small control block
+    const tpl = (targets && targets.coreControl) ? targets.coreControl : (TrainingKnowledge.dosingTemplates && TrainingKnowledge.dosingTemplates.coreControl);
+    const mins = durationMinutes(tpl, ctx.minutes, 1);
 
     // choose 1 item only to keep it short
-    const e = (tpl.examples && tpl.examples.length) ? tpl.examples[0] : { item: "Plank", unit: "seconds", range: [15, 30] };
+    const e = (tpl && tpl.examples && tpl.examples.length)
+      ? tpl.examples[0]
+      : { item: "Plank", unit: "seconds", range: [15, 30] };
+
     const mid = Math.round((e.range[0] + e.range[1]) / 2);
 
     return {
@@ -250,18 +290,18 @@ const SessionEngine = (function () {
         reps: e.unit === "reps" ? mid : undefined,
         seconds: e.unit === "seconds" ? mid : undefined,
         restSec: 10,
-        tempo: TrainingKnowledge.tempo.defaultSeconds,
+        tempo: TrainingKnowledge.tempo && TrainingKnowledge.tempo.defaultSeconds ? TrainingKnowledge.tempo.defaultSeconds : null,
         transitionSec: 6
       }]
     };
   }
 
   function buildCooldownBlock(targets, ctx) {
-    const tpl = targets.breathingCooldown || TrainingKnowledge.dosingTemplates.breathingCooldown;
-    const min = tpl.durationMin?.[sessionMinutes] ?? 0;
+    const tpl = (targets && targets.breathingCooldown) ? targets.breathingCooldown : (TrainingKnowledge.dosingTemplates && TrainingKnowledge.dosingTemplates.breathingCooldown);
+    const mins = durationMinutes(tpl, ctx.minutes, 2);
 
     // breathing protocol: represent as one timed item (phases)
-    const p = tpl.protocol || { unit: "seconds", perPhaseRange: [3, 4], phases: ["inspira", "trattieni", "espira", "vuoto"] };
+    const p = (tpl && tpl.protocol) ? tpl.protocol : { unit: "seconds", perPhaseRange: [3, 4], phases: ["inspira", "trattieni", "espira", "vuoto"] };
     const perPhase = Math.round((p.perPhaseRange[0] + p.perPhaseRange[1]) / 2);
     const cycleSec = perPhase * (p.phases ? p.phases.length : 4);
 
@@ -283,31 +323,52 @@ const SessionEngine = (function () {
   function buildStrengthBlock(exAll, targets, ctx, rand) {
     const chosen = chooseStrengthExercises(exAll, targets, ctx, rand);
 
-    // Apply StudyEngine targets for sets/reps/band
-    const pullT = targets.strength.pull;
-    const pushT = targets.strength.push;
-    const postT = targets.strength.posterior;
+    // Apply StudyEngine targets for sets/reps/band/rest
+    const pullT = targets && targets.strength ? targets.strength.pull : null;
+    const pushT = targets && targets.strength ? targets.strength.push : null;
+    const postT = targets && targets.strength ? targets.strength.posterior : null;
+
+    function safeTarget(t, fallback) {
+      const fb = fallback || { sets: 2, reps: 12, band: 25, rest: 45 };
+      if (!t || typeof t !== "object") return { ...fb };
+      return {
+        sets: Number.isFinite(t.sets) ? t.sets : fb.sets,
+        reps: Number.isFinite(t.reps) ? t.reps : fb.reps,
+        band: Number.isFinite(t.band) ? t.band : fb.band,
+        rest: Number.isFinite(t.rest) ? t.rest : fb.rest
+      };
+    }
+
+    const pullT2 = safeTarget(pullT, { sets: 2, reps: 12, band: 25, rest: 45 });
+    const pushT2 = safeTarget(pushT, { sets: 2, reps: 12, band: 25, rest: 45 });
+    const postT2 = safeTarget(postT, { sets: 2, reps: 12, band: 25, rest: 50 });
 
     function pack(ex, t, familyLabel) {
       if (!ex) return null;
 
-      // validate against context/band
-      const v = BiomechanicalEngine.validateExercise(ex, { ...ctx, band: t.band });
-      if (!v.ok) {
-        // fallback: reduce band to allowed max or drop sets
-        const safeBand = Math.min(t.band, ex.allowedMaxBand || t.band);
-        const v2 = BiomechanicalEngine.validateExercise(ex, { ...ctx, band: safeBand });
-        if (!v2.ok) {
-          // last resort: mark as warning but keep (UI can show)
+      // validate against context/band (if available)
+      try {
+        if (BiomechanicalEngine && typeof BiomechanicalEngine.validateExercise === "function") {
+          const v = BiomechanicalEngine.validateExercise(ex, { ...ctx, band: t.band });
+          if (v && v.ok === false) {
+            const safeBand = Math.min(t.band, ex.allowedMaxBand || t.band);
+            t = { ...t, band: safeBand, sets: Math.max(1, (t.sets || 2) - 1) };
+          }
         }
-        t = { ...t, band: safeBand, sets: Math.max(1, t.sets - 1) };
-      }
+      } catch (_) {}
 
-      const cues = BiomechanicalEngine.getCues(ex);
-      const warnings = BiomechanicalEngine.getWarnings(ex, ctx);
+      let cues = [];
+      let warnings = [];
+      try {
+        if (BiomechanicalEngine && typeof BiomechanicalEngine.getCues === "function") cues = BiomechanicalEngine.getCues(ex) || [];
+        if (BiomechanicalEngine && typeof BiomechanicalEngine.getWarnings === "function") warnings = BiomechanicalEngine.getWarnings(ex, ctx) || [];
+      } catch (_) {}
 
-      // normalize prescription (seconds vs reps)
-      const unit = ex.prescription?.unit || (ex.doseType === TrainingKnowledge.doseTypes.SECONDS ? "seconds" : "reps");
+      const doseTypes = (TrainingKnowledge && TrainingKnowledge.doseTypes) ? TrainingKnowledge.doseTypes : {};
+      const unit =
+        (ex && ex.prescription && ex.prescription.unit) ? ex.prescription.unit :
+        (ex && ex.doseType === doseTypes.SECONDS) ? "seconds" :
+        "reps";
 
       return {
         kind: "strength",
@@ -318,21 +379,21 @@ const SessionEngine = (function () {
         unit,
         sets: t.sets,
         reps: unit === "reps" ? t.reps : undefined,
-        seconds: unit === "seconds" ? (familyLabel === "core" ? targets.core.seconds : 25) : undefined,
+        seconds: unit === "seconds" ? 25 : undefined,
         band: unit === "reps" ? t.band : undefined,
         restSec: t.rest,
-        tempo: TrainingKnowledge.tempo.defaultSeconds,
+        tempo: TrainingKnowledge.tempo && TrainingKnowledge.tempo.defaultSeconds ? TrainingKnowledge.tempo.defaultSeconds : null,
         transitionSec: 10,
-        cues,
-        warnings,
+        cues: uniq(cues),
+        warnings: uniq(warnings),
         noAnchor: !!ctx.noAnchors
       };
     }
 
     const items = [];
-    const pullItem = pack(chosen.pull, pullT, "pull");
-    const pushItem = pack(chosen.push, pushT, "push");
-    const postItem = pack(chosen.posterior, postT, "posterior");
+    const pullItem = pack(chosen.pull, pullT2, "pull");
+    const pushItem = pack(chosen.push, pushT2, "push");
+    const postItem = pack(chosen.posterior, postT2, "posterior");
 
     if (pullItem) items.push(pullItem);
     if (pushItem) items.push(pushItem);
@@ -392,6 +453,7 @@ const SessionEngine = (function () {
   function fillStrengthIfTooShort(session, targetMinutes) {
     // If total time is too short, increase sets in pull/push first, then posterior (respect cap).
     const targetSec = targetMinutes * 60;
+
     function totalSec(s) {
       return (
         sumSeconds(s.blocks.warmup) +
@@ -401,10 +463,14 @@ const SessionEngine = (function () {
         sumSeconds(s.blocks.cooldown)
       );
     }
+
     let sec = totalSec(session);
     if (sec >= targetSec * 0.92) return; // close enough
 
-    const cap = (TrainingKnowledge.spineSafety.posteriorToPullCap || 1.2);
+    const cap = (TrainingKnowledge && TrainingKnowledge.spineSafety && Number.isFinite(TrainingKnowledge.spineSafety.posteriorToPullCap))
+      ? TrainingKnowledge.spineSafety.posteriorToPullCap
+      : 1.2;
+
     const strength = session.blocks.strength;
 
     function setsOf(fam) {
@@ -446,8 +512,9 @@ const SessionEngine = (function () {
     const targets = StudyEngine.getTargets(st, ctx);
 
     // daily seed includes mode + flags that must keep same session if reopened
+    const dayKey = (targets && targets.meta && targets.meta.dayKey) ? targets.meta.dayKey : todayISO();
     const seedStr = [
-      targets.meta.dayKey,
+      dayKey,
       ctx.minutes,
       ctx.runDay ? "run" : "norun",
       ctx.fasting ? "fast" : "nofast",
@@ -456,7 +523,6 @@ const SessionEngine = (function () {
     ].join("|");
 
     const rand = makeRng(seedStr);
-
     const exAll = classifyAll(exerciseDB);
 
     const warm = buildWarmupBlock(targets, ctx);
@@ -469,13 +535,13 @@ const SessionEngine = (function () {
     const session = {
       meta: {
         version: "3.0",
-        dayKey: targets.meta.dayKey,
+        dayKey: dayKey,
         minutes: ctx.minutes,
         runDay: ctx.runDay,
         fasting: ctx.fasting,
         rpe3: ctx.rpe3,
-        deload: !!targets.meta.deload,
-        mult: targets.meta.mult,
+        deload: !!(targets && targets.meta && targets.meta.deload),
+        mult: (targets && targets.meta && targets.meta.mult) ? targets.meta.mult : 1,
         seed: seedStr
       },
       targets,
@@ -493,8 +559,16 @@ const SessionEngine = (function () {
     closeToMinutes(session, ctx.minutes);
 
     // session-level warnings
-    const sessCheck = BiomechanicalEngine.validateSession(session);
-    session.meta.sessionWarnings = (sessCheck && sessCheck.warnings) ? sessCheck.warnings : [];
+    try {
+      if (BiomechanicalEngine && typeof BiomechanicalEngine.validateSession === "function") {
+        const sessCheck = BiomechanicalEngine.validateSession(session);
+        session.meta.sessionWarnings = (sessCheck && sessCheck.warnings) ? sessCheck.warnings : [];
+      } else {
+        session.meta.sessionWarnings = [];
+      }
+    } catch (_) {
+      session.meta.sessionWarnings = [];
+    }
 
     // attach time totals for UI
     session.meta.estimatedSeconds = (
@@ -512,14 +586,18 @@ const SessionEngine = (function () {
   // Deterministic key for localStorage "today session"
   function todayKeyFromFlags(flags) {
     const ctx = StudyEngine.getContextForToday(flags || {});
-    const base = `${ctx.dayKey}_${ctx.minutes}_${ctx.runDay ? 1 : 0}${ctx.fasting ? 1 : 0}${ctx.rpe3}${ctx.noAnchors ? 1 : 0}`;
+    const dayKey = ctx.dayKey || todayISO();
+    const base = `${dayKey}_${ctx.minutes}_${ctx.runDay ? 1 : 0}${ctx.fasting ? 1 : 0}${ctx.rpe3}${ctx.noAnchors ? 1 : 0}`;
     return LS_TODAY_PREFIX + base;
   }
 
   function getOrCreateTodaySession(exerciseDB, userFlags) {
     const key = todayKeyFromFlags(userFlags);
     const cached = jparse(localStorage.getItem(key), null);
-    if (cached && cached.meta && cached.meta.dayKey === todayISO()) return cached;
+
+    // accept cache only if same dayKey
+    const expectedDay = (StudyEngine.getContextForToday(userFlags || {}).dayKey) || todayISO();
+    if (cached && cached.meta && cached.meta.dayKey === expectedDay) return cached;
 
     const session = generateSession(exerciseDB, userFlags);
     localStorage.setItem(key, jstring(session));
@@ -529,8 +607,7 @@ const SessionEngine = (function () {
   // ------------------ completion (save ONLY here) ------------------
   // resultPayload example expected from UI:
   // {
-  //   repsDone: { pull: 12, push: 10, posterior: 12 },  // per main exercise
-  //   bandsUsed: { pull:25, push:15, posterior:15 },    // optional override
+  //   repsDone: { pull: 12, push: 10, posterior: 12 },
   //   techniqueOk: { pullOk:true, pushOk:true, posteriorOk:true },
   //   notes: "..."
   // }
@@ -574,7 +651,7 @@ const SessionEngine = (function () {
     });
     localStorage.setItem(LS_HISTORY_KEY, jstring(hist));
 
-    // Save export blob for later “ChatGPT analysis”
+    // Save export blob
     const exportBlob = {
       exportedAt: new Date().toISOString(),
       session,
