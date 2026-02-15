@@ -186,7 +186,7 @@ const SessionEngine = (function () {
   function buildWarmupBlock(targets, ctx) {
     // Use dosingTemplates.warmup examples; convert into executable items
     const tpl = targets.warmup || TrainingKnowledge.dosingTemplates.warmup;
-    const mins = (ctx.minutes >= 35) ? tpl.durationMin.for35 : tpl.durationMin.for25;
+    const mins = (ctx.minutes >= 35) ? tpl.durationMin.for35 : ;
 
     // One to two “micro-exercises” from examples, 1 set each, reps mid-range
     const exs = (tpl.examples || []).slice(0, 3);
@@ -210,7 +210,7 @@ const SessionEngine = (function () {
 
   function buildMobilityBlock(targets, ctx) {
     const tpl = targets.mobility || TrainingKnowledge.dosingTemplates.mobility;
-    const mins = (ctx.minutes >= 35) ? tpl.durationMin.for35 : tpl.durationMin.for25;
+   const min = tpl.durationMin?.[sessionMinutes] ?? 0;
 
     const exs = (tpl.examples || []).slice(0, 2);
     const items = exs.map((e) => {
@@ -234,7 +234,7 @@ const SessionEngine = (function () {
   function buildCoreControlBlock(targets, ctx) {
     // Small control block (not the “main core” which user wants minimal)
     const tpl = targets.coreControl || TrainingKnowledge.dosingTemplates.coreControl;
-    const mins = (ctx.minutes >= 35) ? tpl.durationMin.for35 : tpl.durationMin.for25;
+    const min = tpl.durationMin?.[sessionMinutes] ?? 0;
 
     // choose 1 item only to keep it short
     const e = (tpl.examples && tpl.examples.length) ? tpl.examples[0] : { item: "Plank", unit: "seconds", range: [15, 30] };
@@ -258,7 +258,7 @@ const SessionEngine = (function () {
 
   function buildCooldownBlock(targets, ctx) {
     const tpl = targets.breathingCooldown || TrainingKnowledge.dosingTemplates.breathingCooldown;
-    const mins = (ctx.minutes >= 35) ? tpl.durationMin.for35 : tpl.durationMin.for25;
+    const min = tpl.durationMin?.[sessionMinutes] ?? 0;
 
     // breathing protocol: represent as one timed item (phases)
     const p = tpl.protocol || { unit: "seconds", perPhaseRange: [3, 4], phases: ["inspira", "trattieni", "espira", "vuoto"] };
