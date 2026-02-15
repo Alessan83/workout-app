@@ -1,270 +1,1195 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Workout 100</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workout 100</title>
 
-<style>
-:root{
-  --bg:#0f1115; 
-  --panel:#151924; 
-  --text:#e8e8e8; 
-  --muted:#a8b0c0; 
-  --line:#2a3142;
-  --accent:#4da6ff; 
-  --ok:#25d366; 
-  --warn:#f5c542; 
-  --danger:#ff5c5c;
-}
+  <style>
+    :root{
+      --bg:#0f1115;
+      --panel:#151924;
+      --text:#e8e8e8;
+      --muted:#a8b0c0;
+      --line:#2a3142;
+      --accent:#4da6ff;
+      --ok:#25d366;
+      --warn:#f5c542;
+      --danger:#ff5c5c;
+    }
 
-body{
-  font-family:Arial,system-ui;
-  background:var(--bg);
-  color:var(--text);
-  margin:0;
-  padding:12px;
-}
+    body{
+      font-family: Arial, system-ui;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 12px;
+    }
 
-.card{
-  background:var(--panel);
-  border:1px solid var(--line);
-  border-radius:10px;
-  padding:10px;
-  margin:10px auto;
-  max-width:900px;
-}
+    h1{
+      margin: 6px 0 10px;
+      font-size: 22px;
+      letter-spacing: .2px;
+    }
 
-.controls{
-  display:flex;
-  flex-wrap:wrap;
-  gap:10px;
-  align-items:flex-end;
-}
+    .card{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      margin: 10px auto;
+      max-width: 980px;
+    }
 
-.field{
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-}
+    .card.controls{
+      position: sticky;
+      top: 8px;
+      z-index: 20;
+      box-shadow: 0 6px 20px rgba(0,0,0,.22);
+    }
 
-label{
-  font-size:12px;
-  color:var(--muted);
-}
+    .controlsRow{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
 
-select,button{
-  border:1px solid var(--line);
-  background:#0b0d12;
-  color:var(--text);
-  border-radius:8px;
-  padding:8px;
-  font-size:14px;
-}
+    .field{
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 82px;
+    }
 
-button{cursor:pointer}
+    label{
+      font-size: 12px;
+      color: var(--muted);
+    }
 
-.exercise{
-  border:1px solid var(--line);
-  border-radius:10px;
-  padding:10px;
-  margin:8px 0;
-  background:#0b0d12;
-}
+    select, button, input{
+      border: 1px solid var(--line);
+      background: #0b0d12;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
 
-.sectionTitle{
-  margin-top:14px;
-  font-weight:700;
-}
+    button{
+      cursor: pointer;
+      background: #0b0d12;
+      white-space: nowrap;
+    }
 
-.cues{
-  font-size:13px;
-  color:var(--muted);
-  margin-top:6px;
-}
+    button.primary{
+      border-color: rgba(77,166,255,.35);
+    }
 
-@media(max-width:600px){
-  select,button{width:100%}
-}
-</style>
+    button:disabled{
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .actions{
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+
+    .iconBtn{
+      width: 48px;
+      padding: 8px 0;
+      font-size: 18px;
+      font-weight: 700;
+      border-radius: 12px;
+    }
+
+    .toggleRow{
+      margin-top: 8px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .toggleRow label{
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .small{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .hr{
+      height: 1px;
+      background: var(--line);
+      margin: 10px 0;
+    }
+
+    .sectionTitle{
+      margin: 12px 0 6px;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+
+    .exercise{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      margin: 8px 0;
+      background: #0b0d12;
+    }
+
+    .exerciseHeader{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .nameRow{
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .nameRow b{
+      display: block;
+      font-size: 15px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .nameRow .alt{
+      font-size: 12px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .videoBtn{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #0b0d12;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+
+    .videoBtn:hover{
+      text-decoration: underline;
+    }
+
+    .metaLine{
+      margin-top: 6px;
+    }
+
+    .rxBox{
+      margin-top: 8px;
+      padding: 8px;
+      border-radius: 12px;
+      border: 1px dashed rgba(255,255,255,.12);
+      background: rgba(255,255,255,.02);
+    }
+
+    .rxGrid{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .rxPill{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 8px;
+      background: #0b0d12;
+      font-size: 13px;
+    }
+
+    .rxPill b{
+      color: var(--text);
+    }
+
+    .cuesTitle{
+      margin-top: 10px;
+      font-weight: 700;
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: .2px;
+      text-transform: uppercase;
+    }
+
+    ul.cues{
+      margin: 8px 0 0;
+      padding-left: 18px;
+    }
+
+    ul.cues li{
+      margin: 4px 0;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+
+    .didReps{
+      margin-top: 8px;
+      width: 100%;
+    }
+
+    details summary{
+      cursor: pointer;
+    }
+
+    /* Phone comfort (make controls less tall + keep room for exercises) */
+    @media (max-width: 600px){
+      body{ padding: 8px; }
+      h1{ font-size: 19px; margin: 6px 0 8px; }
+      .card{ padding: 9px; margin: 8px auto; }
+      .card.controls{ padding: 8px; top: 6px; }
+      .field{ min-width: 72px; flex: 1 1 88px; }
+      select, button, input{ font-size: 15px; padding: 7px 10px; }
+      .actions{ width: 100%; margin-left: 0; }
+      #completeBtn{ flex: 1 1 auto; }
+      .toggleRow label{ font-size: 12px; }
+      .exercise{ padding: 10px; }
+      .videoBtn{ padding: 7px 10px; }
+      .rxGrid{ grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
+
 <body>
+  <h1>Workout 100</h1>
 
-<h2>Workout 100</h2>
+  <div class="card controls" id="controlsCard">
+    <div class="controlsRow">
+      <div class="field">
+        <label>Durata</label>
+        <select id="mode">
+          <option value="25">25</option>
+          <option value="35">35</option>
+        </select>
+      </div>
 
-<div class="card">
-  <div class="controls">
-    <div class="field">
-      <label>Durata</label>
-      <select id="mode">
-        <option value="25">25 minuti</option>
-        <option value="35">35 minuti</option>
-      </select>
+      <div class="field">
+        <label>RPE</label>
+        <select id="rpeGlobal">
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Banda</label>
+        <select id="bandBase">
+          <option value="15">15</option>
+          <option value="25" selected>25</option>
+          <option value="35">35</option>
+        </select>
+      </div>
+
+      <div class="actions">
+        <button class="iconBtn" id="shuffleBtn" title="Cambia proposta per oggi">↻</button>
+        <button class="primary" id="completeBtn">Allenamento completato</button>
+      </div>
     </div>
 
-    <div class="field">
-      <label>RPE finale</label>
-      <select id="rpe">
-        <option value="1">1 = facile</option>
-        <option value="2" selected>2 = ok</option>
-        <option value="3">3 = duro</option>
-      </select>
+    <div class="toggleRow">
+      <label><input type="checkbox" id="runDay" /> Giorno corsa/bici</label>
+      <label><input type="checkbox" id="fasting" /> Digiuno</label>
+      <label><input type="checkbox" id="noAnchor" checked /> No appigli/ancoraggi</label>
     </div>
 
-    <button id="btnGen">Genera sessione</button>
-    <button id="btnComplete">Allenamento completato</button>
+    <div class="small" id="statusLine" style="margin-top:8px"></div>
   </div>
 
-  <div id="statusLine" class="small" style="margin-top:8px"></div>
-</div>
+  <div class="card">
+    <div id="program"></div>
+  </div>
 
-<div class="card" id="programArea"></div>
+  <div class="card">
+    <div id="logBox" class="small"></div>
+  </div>
 
-<div class="card">
-  <pre id="logArea" class="small"></pre>
-</div>
+  <!-- External engines (optional). Keep order. -->
+  <script src="trainingKnowledge.js"></script>
+  <script src="studyEngine.js"></script>
+  <script src="biomechanicalEngine.js"></script>
+  <script src="sessionengine1.js"></script>
 
-<!-- SCRIPT ORDER (critical) -->
-<script src="trainingKnowledge.js"></script>
-<script src="equipmentEngine.js"></script>
-<script src="biomechanicalEngine.js"></script>
-<script src="studyEngine.js"></script>
-<script src="sessionengine1.js"></script>
+  <script>
+/* =========================================================
+   WORKOUT 100 — SINGLE FILE INDEX
+   - Stable "today" draft session generated via SessionEngine
+   - Locks when "Allenamento completato" is pressed
+   - Warm-up + Mobility + Strength
+   - Per-exercise: RX (cycles/reps/band), Attenzioni (cues), Video button
+   - No appigli/ancoraggi filter
+   - Uses StudyEngine + BiomechanicalEngine when available
+   - Fallbacks prevent empty sections (0)
+========================================================= */
 
-<script>
+/* ==========================
+   DB
+========================== */
 let exerciseDB = null;
-let currentSession = null;
 
-// load JSON DB
-async function loadDB(){
+async function loadDB() {
   try {
-    const res = await fetch("exercises.json",{cache:"no-store"});
-    if(!res.ok) throw new Error("HTTP "+res.status);
+    const res = await fetch("exercises.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+
     exerciseDB = await res.json();
-    document.getElementById("statusLine").innerText = "DB caricato ✔";
-  } catch(e) {
-    document.getElementById("statusLine").innerText = "Errore DB ❌";
-    console.error("Errore fetch exercises.json:",e);
+
+    // Accept either "training" or "exercises" for strength pool
+    const hasTraining = Array.isArray(exerciseDB && exerciseDB.training);
+    const hasExercises = Array.isArray(exerciseDB && exerciseDB.exercises);
+
+    if (!hasTraining && !hasExercises) {
+      throw new Error("Struttura JSON errata: manca 'training' o 'exercises' (array).");
+    }
+
+    boot();
+
+  } catch (err) {
+    console.error("Errore caricamento exercises.json:", err);
+    const programDiv = document.getElementById("program");
+    if (programDiv) {
+      programDiv.innerHTML =
+        "<b>Errore caricamento exercises.json</b><br><span class='small'>" +
+        escapeHtml(err && err.message ? err.message : String(err)) +
+        "</span>";
+    }
   }
 }
 
-function today(){
-  return new Date().toISOString().split("T")[0];
+/* ==========================
+   STORAGE
+========================== */
+const STORAGE_KEY = "workout100_v20";
+
+const DEFAULT_DATA = {
+  startDate: new Date().toISOString().split("T")[0],
+
+  // "today" state
+  todayKey: null,
+  todayNonce: 0,
+  todayDraft: null,   // { date, key, session }
+  todaySaved: null,   // { date, session }
+
+  completedDate: null,
+  streak: 0,
+
+  sessions: []
+};
+
+function deepClone(obj){
+  if (typeof structuredClone === "function") return structuredClone(obj);
+  return JSON.parse(JSON.stringify(obj));
 }
 
-function genSession(){
-  if(!exerciseDB){
-    alert("DB non caricato!");
-    return;
-  }
-  if(typeof SessionEngine !== "object"){
-    alert("SessionEngine non trovato");
-    return;
-  }
+function loadData(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return deepClone(DEFAULT_DATA);
+    const parsed = JSON.parse(raw);
 
-  const mode = parseInt(document.getElementById("mode").value,10);
+    return {
+      ...deepClone(DEFAULT_DATA),
+      ...parsed,
+      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : []
+    };
+  }catch(e){
+    console.warn("localStorage reset:", e);
+    return deepClone(DEFAULT_DATA);
+  }
+}
 
-  currentSession = SessionEngine.generateSession(exerciseDB,{
-    sessionMinutes: mode,
-    runDay:false,
-    fasting:false
+function saveData(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }catch(e){
+    console.error("Errore salvataggio localStorage:", e);
+  }
+}
+
+let data = loadData();
+
+/* ==========================
+   UTILS
+========================== */
+const REPS_OPTIONS = [8,10,12,14,16,18,20];
+
+function today(){ return new Date().toISOString().split("T")[0]; }
+
+function daysBetween(d1, d2){
+  return Math.floor((new Date(d2) - new Date(d1)) / 86400000);
+}
+
+function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+
+function escapeHtml(str){
+  return String(str)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function uniq(arr){
+  const out = [];
+  const seen = new Set();
+  (arr || []).forEach(x => {
+    const s = String(x || "").trim();
+    if (!s) return;
+    if (seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
   });
-
-  renderSession();
-  document.getElementById("statusLine").innerText =
-    "Sessione generata: "+today()+" • "+mode+" min";
+  return out;
 }
 
-function renderSession(){
-  const area=document.getElementById("programArea");
-  area.innerHTML="";
-
-  if(!currentSession)return;
-
-  renderBlock("Riscaldamento",currentSession.warm,area);
-  renderBlock("Mobilità",currentSession.mobility,area);
-  renderBlock("Forza",currentSession.strength,area);
+/* ==========================
+   SEEDED RNG (stable for today)
+========================== */
+function mulberry32(a){
+  return function(){
+    var t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
 }
 
-function renderBlock(title,list,container){
-  if(!Array.isArray(list) || list.length===0) return;
-  container.innerHTML += `<div class="sectionTitle">${title} (${list.length})</div>`;
-
-  list.forEach((ex,i)=>{
-    container.innerHTML += renderExercise(ex,i);
-  });
+function seedFromString(str){
+  let n = 0;
+  for (let i = 0; i < str.length; i++){
+    n = (n * 31 + str.charCodeAt(i)) >>> 0;
+  }
+  return n >>> 0;
 }
 
-function renderExercise(ex){
-  const cues = [
-    ...(typeof BiomechanicalEngine==="object" && BiomechanicalEngine.getCues ? BiomechanicalEngine.getCues(ex):[]),
-    ...(typeof StudyEngine==="object" && StudyEngine.getCues ? StudyEngine.getCues(ex):[]),
-    ...(ex.cues || [])
+function withSeededRandom(seed, fn){
+  const old = Math.random;
+  const rng = mulberry32(seed);
+  Math.random = rng;
+  try { return fn(); }
+  finally { Math.random = old; }
+}
+
+/* ==========================
+   NO-ANCHOR (filter)
+========================== */
+function buildNoAnchorQuery(base){
+  return `${base} elastico sotto piedi senza ancoraggio senza appigli no door anchor no pull up bar`;
+}
+
+function isAnchorExercise(ex){
+  if (ex && ex.requiresAnchor === true) return true;
+  if (ex && ex.noAnchorOk === true) return false;
+
+  const n = (ex && ex.name ? ex.name : String(ex || "")).toLowerCase();
+  const patterns = [
+    "anchor","anchoring","door","porta","door anchor","ancoraggio","appiglio",
+    "pull-up bar","pull up bar","sbarra","barra trazioni","chin-up","chin up",
+    "cable","cavo","cavi","lat machine"
   ];
 
-  const uniques = [...new Set(cues)];
-
-  let html=`<div class="exercise"><b>${ex.name}</b>`;
-
-  if(ex.prescription){
-    html += `<div>Rx: ${ex.prescription.cycles}× ${ex.prescription.reps}</div>`;
-    if(ex.prescription.band)
-      html += `<div>Banda: ${ex.prescription.band}</div>`;
-  }
-
-  if(uniques.length){
-    html += `<div class="cues">• ${uniques.join("<br>• ")}</div>`;
-  }
-
-  html += "</div>";
-  return html;
+  return patterns.some(p => n.includes(p));
 }
 
-function completeSession(){
-  if(!currentSession){
-    alert("Genera una sessione prima!");
+function videoLinkFromName(name, noAnchorOnly){
+  const q = noAnchorOnly ? buildNoAnchorQuery(name) : (name + " tutorial");
+  return "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
+}
+
+/* ==========================
+   NORMALIZE EXERCISES
+========================== */
+function normExercise(x, forcedFamily=null){
+  if (!x) return null;
+
+  // String -> minimal object
+  if (typeof x === "string"){
+    return {
+      name: x,
+      nameEN: null,
+      family: (forcedFamily || "core"),
+      cues: [],
+      link: null,
+      prescription: null,
+      requiresAnchor: false,
+      noAnchorOk: false
+    };
+  }
+
+  // Object
+  if (typeof x === "object" && x.name){
+    return {
+      name: String(x.name),
+      nameEN: x.nameEN ? String(x.nameEN) : (x.en ? String(x.en) : null),
+      family: String(forcedFamily || x.family || "core").toLowerCase(),
+      cues: Array.isArray(x.cues) ? x.cues.map(String) : (x.cues ? [String(x.cues)] : []),
+      link: x.link ? String(x.link) : null,
+      prescription: x.prescription || x.rx || null,
+      requiresAnchor: x.requiresAnchor === true,
+      noAnchorOk: x.noAnchorOk === true
+    };
+  }
+
+  return null;
+}
+
+/* Session shapes can vary: session / blocks / plan */
+function unwrapSession(s){
+  if (!s) return null;
+  if (s.session && typeof s.session === "object") return s.session;
+  if (s.blocks && typeof s.blocks === "object") return s.blocks;
+  if (s.plan && typeof s.plan === "object") return s.plan;
+  return s;
+}
+
+/* Map any plausible keys to warm/mobility/strength arrays */
+function normalizeSessionLists(raw){
+  const s = unwrapSession(raw) || {};
+
+  const warmArr = (s.warm || s.warmup || s.warmUp || s.prep || s.riscaldamento || []);
+  const mobArr  = (s.mobility || s.mob || s.move || s.mobilita || []);
+
+  // Strength can be strength/exercises/training/work
+  const strengthArr =
+    (s.strength || s.exercises || s.training || s.work || s.forza || []);
+
+  const warm = (warmArr || []).map(x => normExercise(x, "warm")).filter(Boolean);
+  const mobility = (mobArr || []).map(x => normExercise(x, "mobility")).filter(Boolean);
+  const strength = (strengthArr || []).map(x => normExercise(x)).filter(Boolean);
+
+  return { warm, mobility, strength };
+}
+
+/* ==========================
+   CUES / ATTENZIONI
+========================== */
+function cuesFallbackByFamily(fam){
+  if (fam === "upper") return [
+    "Scapole stabili (no spalle alle orecchie)",
+    "Collo neutro",
+    "Costole giù (ribs down)",
+    "Controllo eccentrica"
+  ];
+  if (fam === "core") return [
+    "Addome contratto (brace)",
+    "Bacino neutro",
+    "Respira senza perdere tensione",
+    "Stop se dolore lombare"
+  ];
+  if (fam === "lower") return [
+    "Schiena neutra",
+    "Ginocchia in linea",
+    "Spinta da anche/glutei",
+    "Controllo caviglie"
+  ];
+  if (fam === "warm") return [
+    "Ritmo fluido",
+    "Range controllato",
+    "Respirazione regolare"
+  ];
+  if (fam === "mobility") return [
+    "Lento e controllato",
+    "Nessun dolore acuto",
+    "Range progressivo",
+    "Pausa respirazione a fine ROM"
+  ];
+  return ["Tecnica prima del volume"];
+}
+
+function getEngineCues(ex, ctx){
+  const out = [];
+
+  // BiomechanicalEngine
+  try{
+    if (window.BiomechanicalEngine){
+      if (typeof BiomechanicalEngine.getCues === "function"){
+        const c = BiomechanicalEngine.getCues(ex, ctx);
+        if (Array.isArray(c)) out.push(...c);
+      }
+      if (typeof BiomechanicalEngine.analyzeExercise === "function"){
+        const a = BiomechanicalEngine.analyzeExercise(ex, ctx);
+        if (a){
+          if (Array.isArray(a.cues)) out.push(...a.cues);
+          if (Array.isArray(a.attentions)) out.push(...a.attentions);
+          if (typeof a.notes === "string") out.push(a.notes);
+        }
+      }
+    }
+  }catch(e){}
+
+  // StudyEngine
+  try{
+    if (window.StudyEngine){
+      if (typeof StudyEngine.getCues === "function"){
+        const c = StudyEngine.getCues(ex, ctx);
+        if (Array.isArray(c)) out.push(...c);
+      }
+      if (typeof StudyEngine.analyzeExercise === "function"){
+        const a = StudyEngine.analyzeExercise(ex, ctx);
+        if (a){
+          if (Array.isArray(a.cues)) out.push(...a.cues);
+          if (Array.isArray(a.attentions)) out.push(...a.attentions);
+          if (typeof a.notes === "string") out.push(a.notes);
+        }
+      }
+    }
+  }catch(e){}
+
+  return out.map(String);
+}
+
+function getDetailedCues(ex, ctx){
+  const fam = (ex.family || "core").toLowerCase();
+  const cues = uniq([
+    ...(Array.isArray(ex.cues) ? ex.cues : []),
+    ...getEngineCues(ex, ctx),
+    ...cuesFallbackByFamily(fam)
+  ]);
+  return cues.slice(0, 12);
+}
+
+/* ==========================
+   RX / DOSING (cycles/reps/band)
+========================== */
+function getRx(ex, ctx){
+  // Priority:
+  // 1) exercise.prescription / rx (from DB or SessionEngine)
+  // 2) BiomechanicalEngine.getPrescription(ex, ctx)
+  // 3) StudyEngine.getPrescription(ex, ctx)
+  // 4) fallback templates
+
+  const base = ex && (ex.prescription || ex.rx);
+  if (base && typeof base === "object") return base;
+
+  try{
+    if (window.BiomechanicalEngine && typeof BiomechanicalEngine.getPrescription === "function"){
+      const p = BiomechanicalEngine.getPrescription(ex, ctx);
+      if (p && typeof p === "object") return p;
+    }
+  }catch(e){}
+
+  try{
+    if (window.StudyEngine && typeof StudyEngine.getPrescription === "function"){
+      const p = StudyEngine.getPrescription(ex, ctx);
+      if (p && typeof p === "object") return p;
+    }
+  }catch(e){}
+
+  // Fallback
+  const band = parseInt(document.getElementById("bandBase")?.value || "25", 10);
+
+  if (ctx.kind === "warm") return { cycles: 1, reps: 20 };
+  if (ctx.kind === "mobility") return { cycles: 1, reps: 10 };
+  if (ctx.kind === "strength") return { cycles: 2, band: band, reps: 12 };
+
+  return { cycles: 1, reps: 10 };
+}
+
+/* ==========================
+   TODAY SESSION — draft vs saved
+========================== */
+let plan = { warm: [], mobility: [], strength: [] };
+
+function ensureTodayState(){
+  const t = today();
+  if (!data.todayKey || !String(data.todayKey).startsWith(t + "|")){
+    data.todayKey = null;
+    data.todayNonce = 0;
+    data.todayDraft = null;
+    data.todaySaved = null;
+    saveData();
+  }
+}
+
+function computeTodayKey(){
+  const mode = document.getElementById("mode").value;
+  const band = document.getElementById("bandBase").value;
+
+  const runDay = !!document.getElementById("runDay")?.checked;
+  const fasting = !!document.getElementById("fasting")?.checked;
+  const noAnchorOnly = !!document.getElementById("noAnchor")?.checked;
+
+  return `${today()}|${mode}|b${band}|r${runDay?1:0}|f${fasting?1:0}|na${noAnchorOnly?1:0}|n${data.todayNonce||0}`;
+}
+
+function fallbackSession(){
+  const mode = document.getElementById("mode").value;
+
+  // Prefer DB categories if available
+  const warmSrc = Array.isArray(exerciseDB && exerciseDB.warm) ? exerciseDB.warm : null;
+  const mobSrc  = Array.isArray(exerciseDB && exerciseDB.mobility) ? exerciseDB.mobility : null;
+
+  const warmF = ["Inchworm","Jumping Jacks","Arm Circles","High Knees"];
+  const mobF  = ["90/90 Hip Switch","Ankle Rock (knee to wall)","Cat-Cow","Thoracic Rotation (quadruped)"];
+
+  const warmList = (warmSrc && warmSrc.length ? warmSrc : warmF);
+  const mobList  = (mobSrc && mobSrc.length ? mobSrc : mobF);
+
+  const strengthPool = Array.isArray(exerciseDB && exerciseDB.training)
+    ? exerciseDB.training
+    : (Array.isArray(exerciseDB && exerciseDB.exercises) ? exerciseDB.exercises : []);
+
+  const warmCount = (mode === "35") ? 3 : 2;
+  const strengthCount = (mode === "35") ? 8 : 6;
+
+  return {
+    warm: warmList.slice(0, warmCount),
+    mobility: mobList.slice(0, 2),
+    exercises: strengthPool.slice(0, strengthCount)
+  };
+}
+
+function applyNoAnchorFilter(){
+  const noAnchorOnly = !!document.getElementById("noAnchor")?.checked;
+  if (!noAnchorOnly) return;
+
+  plan.warm = plan.warm.filter(ex => !isAnchorExercise(ex));
+  plan.mobility = plan.mobility.filter(ex => !isAnchorExercise(ex));
+  plan.strength = plan.strength.filter(ex => !isAnchorExercise(ex));
+}
+
+function ensureNonEmptyPlan(){
+  // If everything empty -> fallback whole session
+  const total = (plan.warm.length + plan.mobility.length + plan.strength.length);
+  if (total === 0){
+    const s = fallbackSession();
+    plan = normalizeSessionLists(s);
+  }
+
+  // If individual sections empty, try to fill from DB (if present)
+  if (plan.warm.length === 0 && Array.isArray(exerciseDB && exerciseDB.warm)){
+    plan.warm = exerciseDB.warm.slice(0,2).map(x => normExercise(x,"warm")).filter(Boolean);
+  }
+
+  if (plan.mobility.length === 0 && Array.isArray(exerciseDB && exerciseDB.mobility)){
+    plan.mobility = exerciseDB.mobility.slice(0,2).map(x => normExercise(x,"mobility")).filter(Boolean);
+  }
+
+  if (plan.strength.length === 0){
+    const strengthPool = Array.isArray(exerciseDB && exerciseDB.training)
+      ? exerciseDB.training
+      : (Array.isArray(exerciseDB && exerciseDB.exercises) ? exerciseDB.exercises : []);
+
+    plan.strength = strengthPool.slice(0,6).map(x => normExercise(x)).filter(Boolean);
+  }
+}
+
+function buildSessionViaSessionEngine(){
+  if (!window.SessionEngine || typeof SessionEngine.generateSession !== "function"){
+    return null;
+  }
+
+  const mode = parseInt(document.getElementById("mode").value, 10);
+  const band = parseInt(document.getElementById("bandBase").value, 10);
+  const runDay = !!document.getElementById("runDay")?.checked;
+  const fasting = !!document.getElementById("fasting")?.checked;
+
+  // Stable draft for today based on key seed
+  const seed = seedFromString(computeTodayKey());
+
+  return withSeededRandom(seed, () => {
+    return SessionEngine.generateSession(exerciseDB, {
+      sessionMinutes: mode,
+      runDay: runDay,
+      fasting: fasting,
+      band: band
+    });
+  });
+}
+
+function loadOrGenerateToday(){
+  ensureTodayState();
+
+  const key = computeTodayKey();
+
+  // If saved today -> locked
+  if (data.todaySaved && data.todaySaved.date === today()){
+    plan = normalizeSessionLists(data.todaySaved.session);
+    ensureNonEmptyPlan();
+    applyNoAnchorFilter();
+    renderProgram();
+    updateStatusLine();
+    setShuffleEnabled(false);
+    updateLogBox();
     return;
   }
 
-  const rpe=parseInt(document.getElementById("rpe").value,10);
+  // Draft reuse if matches key
+  if (data.todayDraft && data.todayDraft.key === key && data.todayDraft.session){
+    plan = normalizeSessionLists(data.todayDraft.session);
+    ensureNonEmptyPlan();
+    applyNoAnchorFilter();
+    renderProgram();
+    updateStatusLine();
+    setShuffleEnabled(true);
+    updateLogBox();
+    return;
+  }
 
-  const payload={
-    date: today(),
-    rpe: rpe,
-    mode: document.getElementById("mode").value,
-    session: currentSession
-  };
+  // Generate new draft
+  let session = buildSessionViaSessionEngine();
+  if (!session) session = fallbackSession();
 
-  console.log("complete payload:",payload);
+  plan = normalizeSessionLists(session);
+  ensureNonEmptyPlan();
+  applyNoAnchorFilter();
 
-  try{
-    if(typeof StudyEngine==="object" && StudyEngine.completeSession)
-      StudyEngine.completeSession(payload);
-  }catch(e){console.warn(e)}
+  data.todayKey = key;
+  data.todayDraft = { date: today(), key: key, session: session };
+  saveData();
 
-  try{
-    if(typeof BiomechanicalEngine==="object" && BiomechanicalEngine.completeSession)
-      BiomechanicalEngine.completeSession(payload);
-  }catch(e){console.warn(e)}
-
-  try{
-    if(typeof SessionEngine==="object" && SessionEngine.completeSession)
-      SessionEngine.completeSession(payload);
-  }catch(e){console.warn(e)}
-
-  document.getElementById("logArea").innerText =
-    JSON.stringify(payload,null,2);
-  document.getElementById("statusLine").innerText =
-    "Allenamento completato ✔";
+  renderProgram();
+  updateStatusLine();
+  setShuffleEnabled(true);
+  updateLogBox();
 }
 
-// events
-document.getElementById("btnGen").addEventListener("click",genSession);
-document.getElementById("btnComplete").addEventListener("click",completeSession);
+function shuffleToday(){
+  // Allowed only if not locked
+  if (data.todaySaved && data.todaySaved.date === today()) return;
+  ensureTodayState();
+  data.todayNonce = (data.todayNonce || 0) + 1;
+  data.todayDraft = null;
+  data.todayKey = null;
+  saveData();
+  loadOrGenerateToday();
+}
 
-// load DB on start
-loadDB();
-</script>
+function setShuffleEnabled(enabled){
+  const btn = document.getElementById("shuffleBtn");
+  if (!btn) return;
+  btn.disabled = !enabled;
+}
 
+/* ==========================
+   RENDER
+========================== */
+function renderProgram(){
+  const container = document.getElementById("program");
+  container.innerHTML = "";
+
+  const mode = document.getElementById("mode").value;
+  const noAnchorOnly = !!document.getElementById("noAnchor")?.checked;
+
+  container.innerHTML += `<div class="small">Warm-up → Mobilità → Forza</div>`;
+  container.innerHTML += `<div class="hr"></div>`;
+
+  container.innerHTML += `<div class="sectionTitle">Riscaldamento (${plan.warm.length})</div>`;
+  plan.warm.forEach(ex => {
+    container.innerHTML += renderExerciseCard(ex, mode, "warm", noAnchorOnly);
+  });
+
+  container.innerHTML += `<div class="sectionTitle">Mobilità (${plan.mobility.length})</div>`;
+  plan.mobility.forEach(ex => {
+    container.innerHTML += renderExerciseCard(ex, mode, "mobility", noAnchorOnly);
+  });
+
+  container.innerHTML += `<div class="sectionTitle">Forza (${plan.strength.length})</div>`;
+  plan.strength.forEach((ex, i) => {
+    container.innerHTML += renderExerciseCard(ex, mode, "strength", noAnchorOnly, i);
+  });
+}
+
+function renderExerciseCard(ex, mode, kind, noAnchorOnly, index){
+  const fam = (ex.family || (kind === "strength" ? "core" : kind)).toLowerCase();
+
+  const rx = getRx(ex, { mode, kind, family: fam });
+  const cues = getDetailedCues(ex, { mode, kind, family: fam });
+
+  const link = ex.link ? ex.link : videoLinkFromName((ex.nameEN ? (ex.nameEN + " " + ex.name) : ex.name), noAnchorOnly);
+
+  const nameIT = ex.name || "";
+  const nameEN = ex.nameEN || "";
+
+  let rxHTML = "";
+  if (kind === "warm" || kind === "mobility"){
+    const cycles = rx && rx.cycles != null ? rx.cycles : 1;
+    const reps = rx && rx.reps != null ? rx.reps : (kind === "warm" ? 20 : 10);
+
+    rxHTML = `
+      <div class="rxBox">
+        <div class="small"><b>Rx</b> (dosaggio)</div>
+        <div class="rxGrid">
+          <div class="rxPill">Cicli: <b>${escapeHtml(cycles)}</b></div>
+          <div class="rxPill">Reps: <b>${escapeHtml(reps)}</b></div>
+          <div class="rxPill">Tipo: <b>${kind === "warm" ? "Riscaldamento" : "Mobilità"}</b></div>
+        </div>
+      </div>
+    `;
+  }
+
+  let strengthHTML = "";
+  if (kind === "strength"){
+    const cycles = rx && rx.cycles != null ? rx.cycles : 2;
+    const band = rx && rx.band != null ? rx.band : parseInt(document.getElementById("bandBase")?.value || "25", 10);
+    const repsTarget = rx && rx.reps != null ? rx.reps : 12;
+
+    strengthHTML = `
+      <div class="rxBox">
+        <div class="small"><b>Rx</b> (dosaggio)</div>
+        <div class="rxGrid">
+          <div class="rxPill">Cicli: <b>${escapeHtml(cycles)}</b></div>
+          <div class="rxPill">Target reps: <b>${escapeHtml(repsTarget)}</b></div>
+          <div class="rxPill">Banda: <b>${escapeHtml(band)}</b></div>
+        </div>
+
+        <div class="small" style="margin-top:8px">Reps fatte</div>
+        <select class="didReps" data-index="${index}">
+          ${REPS_OPTIONS.map(r => `<option ${r === repsTarget ? "selected" : ""}>${r}</option>`).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  const cuesHTML = `
+    <div class="cuesTitle">Attenzioni</div>
+    <ul class="cues">
+      ${cues.map(c => `<li>${escapeHtml(c)}</li>`).join("")}
+    </ul>
+  `;
+
+  return `
+    <div class="exercise" data-kind="${kind}">
+      <div class="exerciseHeader">
+        <div class="nameRow">
+          <b>${escapeHtml(nameIT)}</b>
+          ${nameEN ? `<div class="alt">${escapeHtml(nameEN)}</div>` : ""}
+        </div>
+        <a class="videoBtn" href="${link}" target="_blank" rel="noopener">Video</a>
+      </div>
+
+      <div class="small metaLine">Family: <b>${escapeHtml(fam)}</b></div>
+
+      ${rxHTML}
+      ${strengthHTML}
+      ${cuesHTML}
+    </div>
+  `;
+}
+
+/* ==========================
+   COMPLETE WORKOUT
+========================== */
+function completeWorkout(){
+  if (!plan || !plan.strength || plan.strength.length === 0){
+    alert("Nessun esercizio forza da salvare.");
+    return;
+  }
+
+  const mode = document.getElementById("mode").value;
+  const rpe = parseInt(document.getElementById("rpeGlobal").value, 10);
+
+  if (isNaN(rpe)){
+    alert("RPE non valido.");
+    return;
+  }
+
+  const t = today();
+  const noAnchorOnly = !!document.getElementById("noAnchor")?.checked;
+
+  // Collect strength exercises with reps done
+  const strengthEls = document.querySelectorAll(".exercise[data-kind='strength']");
+  const sessionExercises = [];
+
+  strengthEls.forEach((el, i) => {
+    const ex = plan.strength[i];
+    if (!ex) return;
+
+    const fam = (ex.family || "core").toLowerCase();
+    const rx = getRx(ex, { mode, kind: "strength", family: fam });
+
+    const sel = el.querySelector(".didReps");
+    const repsDone = sel ? parseInt(sel.value, 10) : null;
+
+    const link = ex.link ? ex.link : videoLinkFromName((ex.nameEN ? (ex.nameEN + " " + ex.name) : ex.name), noAnchorOnly);
+
+    sessionExercises.push({
+      name: ex.name,
+      nameEN: ex.nameEN || null,
+      family: fam,
+      cycles: (rx && rx.cycles != null) ? rx.cycles : null,
+      repsTarget: (rx && rx.reps != null) ? rx.reps : null,
+      repsDone: Number.isFinite(repsDone) ? repsDone : null,
+      band: (rx && rx.band != null) ? rx.band : null,
+      video: link
+    });
+  });
+
+  const payload = {
+    date: t,
+    mode: mode,
+    rpe: rpe,
+    warm: plan.warm.map(x => x.name),
+    mobility: plan.mobility.map(x => x.name),
+    exercises: sessionExercises
+  };
+
+  // Streak
+  if (data.completedDate){
+    const diff = daysBetween(data.completedDate, t);
+    data.streak = (diff === 1) ? (data.streak + 1) : 1;
+  } else {
+    data.streak = 1;
+  }
+  data.completedDate = t;
+
+  // Engine completion hooks (safe)
+  try{
+    if (window.StudyEngine && typeof StudyEngine.completeSession === "function"){
+      StudyEngine.completeSession(payload);
+    }
+  }catch(e){}
+
+  try{
+    if (window.BiomechanicalEngine && typeof BiomechanicalEngine.completeSession === "function"){
+      BiomechanicalEngine.completeSession(payload);
+    }
+  }catch(e){}
+
+  try{
+    if (window.SessionEngine && typeof SessionEngine.completeSession === "function"){
+      SessionEngine.completeSession(payload);
+    }
+  }catch(e){}
+
+  // Save to history
+  data.sessions.push(payload);
+
+  // Lock today
+  const lockedSession = (data.todayDraft && data.todayDraft.session) ? data.todayDraft.session : {
+    warm: payload.warm,
+    mobility: payload.mobility,
+    exercises: payload.exercises
+  };
+
+  data.todaySaved = { date: t, session: lockedSession };
+  data.todayDraft = null;
+
+  saveData();
+
+  setShuffleEnabled(false);
+  updateStatusLine();
+  updateLogBox();
+
+  alert("Allenamento salvato.");
+}
+
+/* ==========================
+   STATUS + LOG
+========================== */
+function updateStatusLine(){
+  const done = (data.completedDate === today());
+  const streak = data.streak || 0;
+
+  const sOK  = !!window.StudyEngine;
+  const bOK  = !!window.BiomechanicalEngine;
+  const seOK = !!(window.SessionEngine && typeof SessionEngine.generateSession === "function");
+
+  const lockTxt = (data.todaySaved && data.todaySaved.date === today()) ? " (bloccato)" : " (bozza)";
+
+  document.getElementById("statusLine").innerHTML =
+    `Oggi: <b>${today()}</b>${lockTxt} — Completato: <b style="color:${done ? "var(--ok)" : "var(--warn)"}">${done ? "SÌ" : "NO"}</b> — Streak: <b>${streak}</b>` +
+    `<br>Motori: Study(${sOK ? "OK" : "NO"}) • Bio(${bOK ? "OK" : "NO"}) • Session(${seOK ? "OK" : "NO"})`;
+}
+
+function updateLogBox(){
+  const box = document.getElementById("logBox");
+  if (!box) return;
+
+  if (!data.sessions || data.sessions.length === 0){
+    box.innerText = "Nessuna sessione salvata.";
+    return;
+  }
+
+  const last = data.sessions[data.sessions.length - 1];
+
+  const lines = [];
+  lines.push(`Ultima sessione: ${last.date} • ${last.mode} min • RPE ${last.rpe}`);
+  lines.push(`Warm: ${(last.warm || []).join(", ")}`);
+  lines.push(`Mobility: ${(last.mobility || []).join(", ")}`);
+  lines.push(`Forza:`);
+
+  (last.exercises || []).forEach((e, idx) => {
+    lines.push(
+      `${idx+1}. ${e.name}${e.nameEN ? " / " + e.nameEN : ""}  ` +
+      `band:${e.band ?? "-"}  rx:${e.repsTarget ?? "-"}×${e.cycles ?? "-"}  fatto:${e.repsDone ?? "-"}`
+    );
+  });
+
+  box.innerHTML =
+    `<div class="small">${escapeHtml(lines.join("\n"))}</div>` +
+    `<div class="hr"></div>` +
+    `<details>` +
+    `<summary class="small">Mostra JSON</summary>` +
+    `<div class="small" style="margin-top:8px">${escapeHtml(JSON.stringify(last, null, 2))}</div>` +
+    `</details>`;
+}
+
+/* ==========================
+   BOOT
+========================== */
+function boot(){
+  // Buttons
+  const completeBtn = document.getElementById("completeBtn");
+  const shuffleBtn = document.getElementById("shuffleBtn");
+
+  completeBtn.addEventListener("click", completeWorkout);
+  shuffleBtn.addEventListener("click", shuffleToday);
+
+  function rerollIfNotLocked(){
+    if (data.todaySaved && data.todaySaved.date === today()) return;
+    ensureTodayState();
+    data.todayNonce = 0;
+    data.todayDraft = null;
+    data.todayKey = null;
+    saveData();
+    loadOrGenerateToday();
+  }
+
+  // Controls changes rebuild draft (unless locked)
+  document.getElementById("mode").addEventListener("change", rerollIfNotLocked);
+  document.getElementById("bandBase").addEventListener("change", rerollIfNotLocked);
+  document.getElementById("runDay").addEventListener("change", rerollIfNotLocked);
+  document.getElementById("fasting").addEventListener("change", rerollIfNotLocked);
+  document.getElementById("noAnchor").addEventListener("change", rerollIfNotLocked);
+
+  // Load + render
+  loadOrGenerateToday();
+  updateStatusLine();
+  updateLogBox();
+}
+
+document.addEventListener("DOMContentLoaded", loadDB);
+
+/* =========================================================
+   END
+========================================================= */
+
+  </script>
 </body>
 </html>
